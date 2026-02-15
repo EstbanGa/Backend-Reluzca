@@ -1,0 +1,55 @@
+# Ignorar entorno virtual
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# Ignorar archivos de Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Ignorar variables de entorno
+.env
+.env.local
+.env.*.local
+
+# Ignorar archivos con credenciales de AWS
+aws-creds.ps1
+
+# Ignorar archivos de IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Ignorar archivos de base de datos
+*.db
+*.sqlite
+*.sqlite3
+
+# Ignorar logs
+*.log
+logs/
+
+# Ignorar archivos de sistema
+.DS_Store
+Thumbs.db
+
+# Ignorar archivos de cobertura
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Ignorar archivos temporales
+*.tmp
+*.bak
+*.cache
