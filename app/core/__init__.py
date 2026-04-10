@@ -1,7 +1,7 @@
-"""Core module initialization."""
+﻿"""Core module initialization."""
 from app.core.config import settings, get_settings
-from app.core.database import get_db, Base, engine
-from app.core.security import (
+from app.infrastructure.database import get_db, Base, engine
+from app.infrastructure.security import (
     hash_password,
     verify_password,
     validate_password_strength,
@@ -12,7 +12,7 @@ from app.core.security import (
     create_email_verification_token,
     verify_email_token,
 )
-from app.core.dependencies import (
+from app.presentation.dependencies import (
     get_current_user,
     get_current_active_user,
     require_admin,
