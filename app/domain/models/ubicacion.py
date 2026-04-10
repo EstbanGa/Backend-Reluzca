@@ -25,7 +25,9 @@ class UbicacionServicio(Base):
     
     # Location Information
     nombre = Column(String(100), nullable=False)
-    tamaño = Column(JSON, nullable=True)  # {"metros_cuadrados": 100, "tipo": "apartamento"}
+    tamaño = Column(JSON, nullable=True)
+    area_m2 = Column(Numeric(10, 2), nullable=True)
+    area_ft2 = Column(Numeric(10, 2), nullable=True)
     baños = Column(Integer, nullable=True)
     pisos = Column(Integer, nullable=True)
     ubicacion = Column(JSON, nullable=True)  # {"lat": 4.123, "lng": -74.123, "direccion": "..."}

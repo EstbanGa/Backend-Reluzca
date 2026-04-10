@@ -7,6 +7,7 @@ from .dashboard import router as dashboard_router
 from .notificaciones import router as notificaciones_router
 from .pqrs import router as pqrs_router
 from .calificaciones import router as calificaciones_router
+from .actividades import router as actividades_router
 
 __all__ = [
     "auth_router",
@@ -18,4 +19,5 @@ __all__ = [
     "notificaciones_router",
     "pqrs_router",
     "calificaciones_router",
+    "actividades_router",
 ]

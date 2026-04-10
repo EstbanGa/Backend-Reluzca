@@ -32,6 +32,8 @@ class PQRS(Base):
     fecha_resolucion = Column(DateTime, nullable=True)
     estado = Column(String(20), nullable=True, default="pendiente")  # pendiente, en_proceso, resuelto, cerrado
     respuesta = Column(Text, nullable=True)
+    respondida_por = Column(UUID(as_uuid=True), ForeignKey("usuarios.id"), nullable=True)
+    fecha_respuesta = Column(DateTime, nullable=True)
     prioridad = Column(String(10), nullable=True, default="media")  # baja, media, alta
     
     # Timestamps
@@ -48,13 +50,18 @@ class PQRS(Base):
     empleada = relationship(
         "Usuario",
         foreign_keys=[id_empleada],
-        back_populates="pqrs_empleada"
+        back_populates="pqrs_empleada",
     )
-    
+
     reserva = relationship(
         "Reserva",
         foreign_keys=[id_reserva],
-        back_populates="pqrs"
+        back_populates="pqrs",
+    )
+
+    respondido_por_usuario = relationship(
+        "Usuario",
+        foreign_keys=[respondida_por],
     )
     
     def __repr__(self):
@@ -73,6 +80,8 @@ class PQRS(Base):
             "fecha_resolucion": self.fecha_resolucion.isoformat() if self.fecha_resolucion else None,
             "estado": self.estado,
             "respuesta": self.respuesta,
+            "respondida_por": str(self.respondida_por) if self.respondida_por else None,
+            "fecha_respuesta": self.fecha_respuesta.isoformat() if self.fecha_respuesta else None,
             "prioridad": self.prioridad,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

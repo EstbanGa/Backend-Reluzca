@@ -96,7 +96,7 @@ def get_all_pqrs_admin(
 class PQRSRespuesta(BaseModel):
     respuesta: str
     estado: Optional[str] = "resuelto"
-    id_empleada: str
+    respondida_por: str
 
 
 @router.put("/{pqrs_id}/responder")

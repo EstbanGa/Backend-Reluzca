@@ -11,7 +11,8 @@ from app.presentation.api.v1 import (
     dashboard_router,
     notificaciones_router,
     pqrs_router,
-    calificaciones_router
+    calificaciones_router,
+    actividades_router,
 )
 
 # Crear las tablas en la base de datos (descomentado cuando tengas DB configurada)
@@ -46,6 +47,7 @@ app.include_router(dashboard_router, prefix="/api")
 app.include_router(notificaciones_router, prefix="/api")
 app.include_router(pqrs_router, prefix="/api")
 app.include_router(calificaciones_router, prefix="/api")
+app.include_router(actividades_router, prefix="/api")
 
 # Debug: imprimir rutas registradas
 

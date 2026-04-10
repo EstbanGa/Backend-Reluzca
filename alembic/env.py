@@ -14,9 +14,13 @@ from app.core.config import settings
 from app.infrastructure.database import Base
 # Importar todos los modelos para que Alembic los detecte
 from app.domain.models.usuario import Usuario
+from app.domain.models.actividad import Actividad, plan_actividades
 from app.domain.models.plan import Plan
 from app.domain.models.reserva import Reserva
 from app.domain.models.ubicacion import UbicacionServicio
+from app.domain.models.notificacion import NotificacionServicio
+from app.domain.models.pqrs import PQRS
+from app.domain.models.calificacion import Calificacion
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

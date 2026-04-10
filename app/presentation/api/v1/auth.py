@@ -25,8 +25,13 @@ def register(
     usuario_data: UsuarioCreate,
     db: Session = Depends(get_db)
 ):
-    """Registra un nuevo usuario"""
+    """
+    Registro público de nuevos usuarios.
+    Solo permite crear cuentas con rol 'cliente'.
+    Las empleadas deben ser creadas por un administrador.
+    """
     try:
+        usuario_data.rol = "cliente"
         from app.application.services.usuario_service import UsuarioService
         usuario_repository = UsuarioRepository(db)
         usuario_service = UsuarioService(usuario_repository)
@@ -37,7 +42,7 @@ def register(
         logger.error(f"Error en registro: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al registrar usuario: {str(e)}"
+            detail=f"Error al registrar usuario: {str(e)}",
         )
 
 

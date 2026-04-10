@@ -6,6 +6,7 @@ from app.infrastructure.database import Base
 
 # Import models in order to avoid circular dependencies
 from app.domain.models.usuario import Usuario
+from app.domain.models.actividad import Actividad, plan_actividades
 from app.domain.models.plan import Plan
 from app.domain.models.ubicacion import UbicacionServicio
 from app.domain.models.reserva import Reserva
@@ -16,6 +17,8 @@ from app.domain.models.calificacion import Calificacion
 __all__ = [
     "Base",
     "Usuario",
+    "Actividad",
+    "plan_actividades",
     "Plan",
     "UbicacionServicio",
     "Reserva",

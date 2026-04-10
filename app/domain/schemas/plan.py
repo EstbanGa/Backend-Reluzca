@@ -4,31 +4,33 @@ from datetime import datetime, date, time
 from decimal import Decimal
 from uuid import UUID
 
+from app.domain.schemas.actividad import ActividadResponse
+
 
 class PlanBase(BaseModel):
-    """Schema base para Plan con todos los campos de Django"""
+    """Schema base para Plan."""
     nombre: str = Field(..., min_length=1, max_length=100)
     estado: bool = Field(default=True)
-    servicios_asociados: Optional[List[str]] = Field(default_factory=list)
+    tipo_plan: Optional[str] = Field(default="full", max_length=20)  # full, a_la_carte
     fecha_inicio: Optional[date] = None
     fecha_final: Optional[date] = None
     descripcion: Optional[str] = None
-    hora_inicio: Optional[time] = None  # Hora en la que puede iniciar el servicio
-    hora_final: Optional[time] = None  # Hora en la que puede finalizar el servicio
-    horas_servicio: Optional[int] = None  # Horas de trabajo máximo
+    hora_inicio: Optional[time] = None
+    hora_final: Optional[time] = None
+    horas_servicio: Optional[int] = None
     precio: Optional[Decimal] = Field(None, max_digits=10, decimal_places=2)
 
 
 class PlanCreate(PlanBase):
-    """Schema para crear plan"""
+    """Schema para crear plan."""
     pass
 
 
 class PlanUpdate(BaseModel):
-    """Schema para actualizar plan - todos los campos opcionales"""
+    """Schema para actualizar plan — todos los campos opcionales."""
     nombre: Optional[str] = Field(None, min_length=1, max_length=100)
     estado: Optional[bool] = None
-    servicios_asociados: Optional[List[str]] = None
+    tipo_plan: Optional[str] = Field(None, max_length=20)
     fecha_inicio: Optional[date] = None
     fecha_final: Optional[date] = None
     descripcion: Optional[str] = None
@@ -39,11 +41,11 @@ class PlanUpdate(BaseModel):
 
 
 class PlanResponse(BaseModel):
-    """Schema de respuesta con TODOS los campos de Django"""
+    """Schema de respuesta para Plan, incluyendo actividades asociadas."""
     id: UUID
     estado: bool
     nombre: str
-    servicios_asociados: Optional[List[str]] = None
+    tipo_plan: Optional[str] = None
     fecha_inicio: Optional[date] = None
     fecha_final: Optional[date] = None
     descripcion: Optional[str] = None
@@ -51,6 +53,7 @@ class PlanResponse(BaseModel):
     hora_final: Optional[time] = None
     horas_servicio: Optional[int] = None
     precio: Optional[Decimal] = None
+    actividades: List[ActividadResponse] = Field(default_factory=list)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

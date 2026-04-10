@@ -1,6 +1,7 @@
 ﻿from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 from typing import List
+from uuid import UUID
 from app.presentation.dependencies import get_db, get_current_user, require_role
 from app.infrastructure.repositories.plan_repository import PlanRepository
 from app.application.services.plan_service import PlanService
@@ -40,7 +41,7 @@ def search_planes(
 
 @router.get("/{plan_id}", response_model=PlanResponse)
 def get_plan(
-    plan_id: int,
+    plan_id: UUID,
     plan_service: PlanService = Depends(get_plan_service)
 ):
     """Obtiene un plan por ID (público)"""
@@ -58,7 +59,7 @@ async def create_plan(
 
 @router.put("/{plan_id}", response_model=PlanResponse)
 async def update_plan(
-    plan_id: int,
+    plan_id: UUID,
     plan_data: PlanUpdate,
     plan_service: PlanService = Depends(get_plan_service)
 ):
@@ -68,7 +69,7 @@ async def update_plan(
 
 @router.delete("/{plan_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_plan(
-    plan_id: int,
+    plan_id: UUID,
     plan_service: PlanService = Depends(get_plan_service)
 ):
     """Elimina un plan"""
@@ -77,7 +78,7 @@ async def delete_plan(
 
 @router.patch("/{plan_id}/deactivate", response_model=PlanResponse)
 async def deactivate_plan(
-    plan_id: int,
+    plan_id: UUID,
     plan_service: PlanService = Depends(get_plan_service)
 ):
     """Desactiva un plan"""

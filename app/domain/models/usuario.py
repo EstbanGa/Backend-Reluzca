@@ -85,8 +85,8 @@ class Usuario(Base):
     # Notificaciones
     notificaciones = relationship(
         "NotificacionServicio",
-        foreign_keys="NotificacionServicio.id_cliente",
-        back_populates="cliente"
+        foreign_keys="NotificacionServicio.id_usuario_destino",
+        back_populates="usuario_destino",
     )
     
     # Calificaciones como usuario (cliente que califica)

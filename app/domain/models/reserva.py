@@ -31,7 +31,9 @@ class Reserva(Base):
     hora_inicio = Column(Time, nullable=False)
     hora_final = Column(Time, nullable=False)
     estado = Column(String(20), nullable=True, default="pendiente")  # pendiente, confirmada, en_proceso, completada, cancelada
-    estado_pago = Column(String(20), nullable=True, default="SIN_PAGAR")  # SIN_PAGAR, PAGADO, REEMBOLSADO
+    estado_pago = Column(String(20), nullable=True, default="SIN_PAGAR")  # SIN_PAGAR, PAGADO, PARCIAL, REEMBOLSADO
+    metodo_pago = Column(String(30), nullable=True)  # efectivo, transferencia, tarjeta
+    fecha_pago = Column(DateTime, nullable=True)
     descripcion = Column(Text, nullable=True)
     precio_total = Column(Numeric(10, 2), nullable=True)
     
@@ -112,6 +114,8 @@ class Reserva(Base):
             "hora_final": self.hora_final.strftime("%H:%M:%S") if self.hora_final else None,
             "estado": self.estado,
             "estado_pago": self.estado_pago,
+            "metodo_pago": self.metodo_pago,
+            "fecha_pago": self.fecha_pago.isoformat() if self.fecha_pago else None,
             "descripcion": self.descripcion,
             "precio_total": float(self.precio_total) if self.precio_total else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,

@@ -6,7 +6,7 @@ from uuid import UUID
 
 
 class ReservaBase(BaseModel):
-    """Schema base para Reserva con todos los campos de Django"""
+    """Schema base para Reserva."""
     id_usuario: UUID
     id_empleada: Optional[UUID] = None
     id_plan: Optional[UUID] = None
@@ -15,7 +15,9 @@ class ReservaBase(BaseModel):
     hora_inicio: time
     hora_final: time
     estado: str = Field(default="pendiente", max_length=20)  # pendiente, confirmada, en_proceso, completada, cancelada
-    estado_pago: str = Field(default="SIN_PAGAR", max_length=20)  # SIN_PAGAR, PAGADO, REEMBOLSADO
+    estado_pago: str = Field(default="SIN_PAGAR", max_length=20)  # SIN_PAGAR, PAGADO, PARCIAL, REEMBOLSADO
+    metodo_pago: Optional[str] = Field(None, max_length=30)  # efectivo, transferencia, tarjeta
+    fecha_pago: Optional[datetime] = None
     descripcion: Optional[str] = None
     precio_total: Optional[Decimal] = Field(None, max_digits=10, decimal_places=2)
 
@@ -26,7 +28,7 @@ class ReservaCreate(ReservaBase):
 
 
 class ReservaUpdate(BaseModel):
-    """Schema para actualizar reserva - todos los campos opcionales"""
+    """Schema para actualizar reserva — todos los campos opcionales."""
     id_empleada: Optional[UUID] = None
     id_plan: Optional[UUID] = None
     id_lugar: Optional[UUID] = None
@@ -35,12 +37,14 @@ class ReservaUpdate(BaseModel):
     hora_final: Optional[time] = None
     estado: Optional[str] = Field(None, max_length=20)
     estado_pago: Optional[str] = Field(None, max_length=20)
+    metodo_pago: Optional[str] = Field(None, max_length=30)
+    fecha_pago: Optional[datetime] = None
     descripcion: Optional[str] = None
     precio_total: Optional[Decimal] = Field(None, max_digits=10, decimal_places=2)
 
 
 class ReservaResponse(BaseModel):
-    """Schema de respuesta con TODOS los campos de Django"""
+    """Schema de respuesta para Reserva."""
     id: UUID
     id_usuario: UUID
     id_empleada: Optional[UUID] = None
@@ -51,6 +55,8 @@ class ReservaResponse(BaseModel):
     hora_final: time
     estado: str
     estado_pago: str
+    metodo_pago: Optional[str] = None
+    fecha_pago: Optional[datetime] = None
     descripcion: Optional[str] = None
     precio_total: Optional[Decimal] = None
     created_at: Optional[datetime] = None

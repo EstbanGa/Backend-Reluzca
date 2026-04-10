@@ -6,15 +6,17 @@ from uuid import UUID
 
 
 class UbicacionServicioBase(BaseModel):
-    """Schema base para UbicacionServicio con todos los campos de Django"""
+    """Schema base para UbicacionServicio."""
     id_usuario: UUID
     nombre: str = Field(..., min_length=1, max_length=100)
-    tamaño: Optional[Dict[str, Any]] = None  # {"metros_cuadrados": 100, "tipo": "apartamento"}
+    tamaño: Optional[Dict[str, Any]] = None
+    area_m2: Optional[Decimal] = Field(None, max_digits=10, decimal_places=2)
+    area_ft2: Optional[Decimal] = Field(None, max_digits=10, decimal_places=2)
     baños: Optional[int] = None
     pisos: Optional[int] = None
-    ubicacion: Optional[Dict[str, Any]] = None  # {"lat": 4.123, "lng": -74.123, "direccion": "..."}
+    ubicacion: Optional[Dict[str, Any]] = None
     nombre_lugar: Optional[str] = Field(None, max_length=100)
-    tipo_lugar: Optional[str] = Field(None, max_length=20)  # casa, apartamento, oficina, etc
+    tipo_lugar: Optional[str] = Field(None, max_length=20)
     estado: bool = Field(default=True)
     descripcion: Optional[str] = None
 
@@ -25,9 +27,11 @@ class UbicacionServicioCreate(UbicacionServicioBase):
 
 
 class UbicacionServicioUpdate(BaseModel):
-    """Schema para actualizar ubicación - todos los campos opcionales"""
+    """Schema para actualizar ubicación — todos los campos opcionales."""
     nombre: Optional[str] = Field(None, min_length=1, max_length=100)
     tamaño: Optional[Dict[str, Any]] = None
+    area_m2: Optional[Decimal] = Field(None, max_digits=10, decimal_places=2)
+    area_ft2: Optional[Decimal] = Field(None, max_digits=10, decimal_places=2)
     baños: Optional[int] = None
     pisos: Optional[int] = None
     ubicacion: Optional[Dict[str, Any]] = None
@@ -38,11 +42,13 @@ class UbicacionServicioUpdate(BaseModel):
 
 
 class UbicacionServicioResponse(BaseModel):
-    """Schema de respuesta con TODOS los campos de Django"""
+    """Schema de respuesta para UbicacionServicio."""
     id: UUID
     id_usuario: UUID
     nombre: str
     tamaño: Optional[Dict[str, Any]] = None
+    area_m2: Optional[Decimal] = None
+    area_ft2: Optional[Decimal] = None
     baños: Optional[int] = None
     pisos: Optional[int] = None
     ubicacion: Optional[Dict[str, Any]] = None

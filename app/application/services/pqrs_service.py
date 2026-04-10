@@ -180,7 +180,8 @@ class PQRSService:
         update_data = {
             "respuesta": respuesta_data.get("respuesta"),
             "estado": respuesta_data.get("estado", "resuelto"),
-            "id_empleada": respuesta_data.get("id_empleada"),
+            "respondida_por": respuesta_data.get("respondida_por"),
+            "fecha_respuesta": datetime.utcnow(),
             "fecha_resolucion": datetime.utcnow(),
             "updated_at": datetime.utcnow(),
         }
