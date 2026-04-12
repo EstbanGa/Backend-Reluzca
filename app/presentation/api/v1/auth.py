@@ -1,12 +1,12 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from app.infrastructure.auth import oauth2_scheme
+from supabase import create_client
+from app.core.config import settings
 from app.presentation.dependencies import get_db
 from app.infrastructure.repositories.usuario_repository import UsuarioRepository
-from app.application.services.auth_service import AuthService
 from app.application.services.usuario_service import UsuarioService
-from app.domain.schemas.usuario import UsuarioLogin, Token, UsuarioCreate, UsuarioResponse, UsuarioCompleteResponse
+from app.infrastructure.security import verify_supabase_token, SupabaseTokenData
+from app.domain.schemas.usuario import UsuarioCreate, UsuarioResponse, LoginRequest, LoginResponse
 import logging
 
 logger = logging.getLogger(__name__)
@@ -14,132 +14,112 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def get_auth_service(db: Session = Depends(get_db)) -> AuthService:
-    """Inyección de dependencias para AuthService"""
-    usuario_repository = UsuarioRepository(db)
-    return AuthService(usuario_repository)
+def _supabase_admin():
+    """Crea cliente Supabase con service_role para operaciones admin."""
+    if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Supabase no está configurado en el servidor",
+        )
+    return create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
 
 
-@router.post("/register", response_model=UsuarioResponse, status_code=status.HTTP_201_CREATED)
-def register(
-    usuario_data: UsuarioCreate,
-    db: Session = Depends(get_db)
-):
+@router.post("/login", response_model=LoginResponse)
+def login(request: LoginRequest):
     """
-    Registro público de nuevos usuarios.
-    Solo permite crear cuentas con rol 'cliente'.
-    Las empleadas deben ser creadas por un administrador.
+    Inicia sesión con email y contraseña via Supabase Auth.
+    Retorna el JWT de Supabase para usar en el header Authorization.
     """
+    if not settings.SUPABASE_URL or not settings.SUPABASE_ANON_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Supabase no está configurado",
+        )
     try:
-        usuario_data.rol = "cliente"
-        from app.application.services.usuario_service import UsuarioService
-        usuario_repository = UsuarioRepository(db)
-        usuario_service = UsuarioService(usuario_repository)
-        return usuario_service.create_usuario(usuario_data)
+        supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY)
+        response = supabase.auth.sign_in_with_password(
+            {"email": request.email, "password": request.password}
+        )
+        if not response.session:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Credenciales inválidas",
+            )
+        return LoginResponse(
+            access_token=response.session.access_token,
+            token_type="bearer",
+        )
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error en registro: {str(e)}", exc_info=True)
+        error_msg = str(e)
+        if "Invalid login credentials" in error_msg or "Email not confirmed" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Credenciales inválidas",
+            )
+        logger.error(f"Error en login: {error_msg}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al registrar usuario: {str(e)}",
+            detail="Error al iniciar sesión",
         )
 
 
-@router.post("/login", response_model=Token)
-def login(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    auth_service: AuthService = Depends(get_auth_service)
-):
-    """Inicia sesión y devuelve un token JWT"""
-    login_data = UsuarioLogin(email=form_data.username, password=form_data.password)
-    token = auth_service.login(login_data)
-    if not token:
+@router.post("/register", response_model=UsuarioResponse, status_code=status.HTTP_201_CREATED)
+def register(usuario_data: UsuarioCreate, db: Session = Depends(get_db)):
+    """
+    Registro público. Crea la cuenta en Supabase Auth y el perfil en la BD.
+    Solo permite rol 'cliente'.
+    """
+    usuario_data.rol = "cliente"
+
+    supabase = _supabase_admin()
+
+    # 1. Verificar que el email no exista ya en nuestra BD
+    repo = UsuarioRepository(db)
+    if repo.get_by_email(usuario_data.correo):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Email o contraseña incorrectos",
-            headers={"WWW-Authenticate": "Bearer"},
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El email ya está registrado",
         )
-    return token
 
-
-@router.post("/login/json", response_model=Token)
-def login_json(
-    login_data: UsuarioLogin,
-    auth_service: AuthService = Depends(get_auth_service)
-):
-    """Inicia sesión con JSON y devuelve un token JWT"""
-    token = auth_service.login(login_data)
-    if not token:
+    # 2. Crear usuario en Supabase Auth
+    try:
+        auth_response = supabase.auth.admin.create_user({
+            "email": usuario_data.correo,
+            "password": usuario_data.password,
+            "email_confirm": True,
+        })
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Email o contraseña incorrectos",
-            headers={"WWW-Authenticate": "Bearer"},
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error al crear cuenta: {str(e)}",
         )
-    return token
+
+    # 3. Crear perfil en nuestra BD con el mismo UUID de Supabase Auth
+    try:
+        from uuid import UUID
+        usuario_data.id = UUID(str(auth_response.user.id))
+        service = UsuarioService(repo)
+        return service.create_usuario(usuario_data)
+    except HTTPException:
+        # Si falla la BD, eliminar el usuario de Supabase Auth para no dejar huérfanos
+        try:
+            supabase.auth.admin.delete_user(str(auth_response.user.id))
+        except Exception:
+            pass
+        raise
+
 
 
 @router.get("/me", response_model=UsuarioResponse)
-def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    auth_service: AuthService = Depends(get_auth_service)
+def me(
+    token_data: SupabaseTokenData = Depends(verify_supabase_token),
+    db: Session = Depends(get_db),
 ):
-    """Obtiene el usuario actual basado en el token"""
-    user = auth_service.get_current_user(token)
+    """Retorna el perfil del usuario autenticado."""
+    repo = UsuarioRepository(db)
+    user = repo.get_by_id(token_data.user_id)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="No se pudo validar las credenciales",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    # Convertir el modelo Usuario a dict y mapear correo -> email
-    user_dict = {
-        "id": str(user.id),  # Convertir UUID a string
-        "rol": user.rol,
-        "fecha_registro": user.fecha_registro,
-        "nombre": user.nombre,
-        "apellido": user.apellido,
-        "email": user.correo,  # Mapear correo a email
-        "documento": user.documento,
-        "telefono": user.telefono,
-        "tipo_persona": user.tipo_persona,
-        "fecha_nacimiento": user.fecha_nacimiento,
-        "estado": user.estado,
-        "ranking": user.ranking,
-        "created_at": user.created_at,
-        "updated_at": user.updated_at
-    }
-    
-    response = UsuarioResponse(**user_dict)
-    
-    return response
-
-
-@router.get("/me/complete", response_model=UsuarioCompleteResponse)
-def get_current_user_complete(
-    token: str = Depends(oauth2_scheme),
-    auth_service: AuthService = Depends(get_auth_service),
-    db: Session = Depends(get_db)
-):
-    """
-    Obtiene TODA la información del usuario actual:
-    - Perfil completo
-    - Todas las reservas (como cliente y como empleada)
-    - Todas las ubicaciones
-    - Información relacionada
-    
-    Este endpoint está diseñado para cargar toda la información al inicio
-    y guardarla en caché en el frontend para evitar múltiples peticiones.
-    """
-    user = auth_service.get_current_user(token)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="No se pudo validar las credenciales",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    usuario_repository = UsuarioRepository(db)
-    usuario_service = UsuarioService(usuario_repository)
-    return usuario_service.get_usuario_complete_info(user.id)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+    return UsuarioResponse.model_validate(user)

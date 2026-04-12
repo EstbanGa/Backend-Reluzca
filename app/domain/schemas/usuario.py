@@ -24,8 +24,9 @@ class UsuarioBase(BaseModel):
 
 
 class UsuarioCreate(UsuarioBase):
-    """Schema para crear usuario - incluye password"""
-    password: str = Field(..., min_length=6)
+    """Schema para crear usuario"""
+    id: Optional[UUID] = None  # UUID asignado por Supabase Auth en /register
+    password: Optional[str] = None  # Solo para /register → Supabase Auth; NO se guarda en BD
 
 
 class UsuarioUpdate(BaseModel):
@@ -40,8 +41,6 @@ class UsuarioUpdate(BaseModel):
     rol: Optional[str] = Field(None, max_length=20)
     estado: Optional[str] = Field(None, max_length=20)
     ranking: Optional[Decimal] = Field(None, max_digits=3, decimal_places=2)
-    password: Optional[str] = Field(None, min_length=6)
-    
     model_config = {
         "populate_by_name": True  # Permite usar tanto "email" como "correo"
     }
@@ -77,31 +76,17 @@ class UsuarioResponse(BaseModel):
         return super().model_validate(obj, **kwargs)
 
 
-class UsuarioLogin(BaseModel):
-    """Schema para login"""
-    correo: EmailStr = Field(..., alias="email")  # Acepta "email" del frontend
+class LoginRequest(BaseModel):
+    """Request de login via Supabase Auth"""
+    email: EmailStr
     password: str
-    
-    model_config = {
-        "populate_by_name": True
-    }
 
 
-class Token(BaseModel):
-    """Schema para token JWT"""
+class LoginResponse(BaseModel):
+    """Respuesta de login con JWT de Supabase"""
     access_token: str
     token_type: str = "bearer"
-    user: Optional['UsuarioResponse'] = None  # Información del usuario logueado
-
-
-class TokenData(BaseModel):
-    """Datos decodificados del token"""
-    correo: Optional[str] = Field(None, alias="email")  # Acepta tanto "email" como "correo"
-    rol: Optional[str] = None
-    
-    model_config = {
-        "populate_by_name": True
-    }
+    user: Optional['UsuarioResponse'] = None
 
 
 class UsuariosEstadisticas(BaseModel):

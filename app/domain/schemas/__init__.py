@@ -3,9 +3,8 @@ from .usuario import (
     UsuarioUpdate,
     UsuarioResponse,
     UsuarioCompleteResponse,
-    UsuarioLogin,
-    Token,
-    TokenData
+    LoginRequest,
+    LoginResponse,
 )
 from .plan import (
     PlanCreate,
@@ -31,9 +30,8 @@ __all__ = [
     "UsuarioUpdate",
     "UsuarioResponse",
     "UsuarioCompleteResponse",
-    "UsuarioLogin",
-    "Token",
-    "TokenData",
+    "LoginRequest",
+    "LoginResponse",
     "PlanCreate",
     "PlanUpdate",
     "PlanResponse",

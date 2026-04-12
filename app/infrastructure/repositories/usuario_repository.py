@@ -29,16 +29,20 @@ class UsuarioRepository:
         )
         return self.db.query(Usuario).filter(search_filter).offset(skip).limit(limit).all()
 
-    def create(self, usuario_data: UsuarioCreate, hashed_password: str) -> Usuario:
-        """Crea un nuevo usuario con todos los campos de Django"""
-        # Default estado: clientes empiezan en "pendiente", empleadas/admins en "activo"
+    def create(self, usuario_data: UsuarioCreate) -> Usuario:
+        """Crea un nuevo usuario (sin password, gestionado por Supabase Auth)"""
         default_estado = "pendiente" if usuario_data.rol == "cliente" else "activo"
         
         from datetime import datetime
         
+        # Si viene un UUID de Supabase Auth, se usa; si no, SQLAlchemy genera uno.
+        extra = {}
+        if getattr(usuario_data, 'id', None):
+            extra['id'] = usuario_data.id
+
         db_usuario = Usuario(
+            **extra,
             correo=usuario_data.correo,
-            password=hashed_password,
             nombre=usuario_data.nombre,
             apellido=usuario_data.apellido,
             telefono=usuario_data.telefono,
@@ -55,19 +59,13 @@ class UsuarioRepository:
         self.db.refresh(db_usuario)
         return db_usuario
 
-    def update(self, usuario_id: int, usuario_data: UsuarioUpdate, hashed_password: Optional[str] = None) -> Optional[Usuario]:
-        """Actualiza un usuario con validación de campo correo"""
+    def update(self, usuario_id: int, usuario_data: UsuarioUpdate) -> Optional[Usuario]:
+        """Actualiza un usuario"""
         db_usuario = self.get_by_id(usuario_id)
         if not db_usuario:
             return None
 
         update_data = usuario_data.model_dump(exclude_unset=True)
-        
-        # Si hay password nuevo, usar el hash proporcionado
-        if hashed_password:
-            update_data["password"] = hashed_password
-        elif "password" in update_data:
-            del update_data["password"]
         
         # Mapear correo si viene como email
         if "email" in update_data:

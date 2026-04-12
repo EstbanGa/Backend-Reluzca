@@ -2,22 +2,14 @@
 from sqlalchemy.orm import Session
 from typing import List
 from uuid import UUID
-from app.infrastructure.auth import oauth2_scheme
 from app.presentation.dependencies import get_db, get_current_user, require_role
 from app.infrastructure.repositories.ubicacion_repository import UbicacionRepository
 from app.infrastructure.repositories.usuario_repository import UsuarioRepository
 from app.application.services.ubicacion_service import UbicacionService
-from app.application.services.auth_service import AuthService
 from app.domain.schemas.ubicacion import UbicacionServicioCreate, UbicacionServicioUpdate, UbicacionServicioResponse
 from app.domain.models.usuario import Usuario
 
 router = APIRouter(prefix="/ubicaciones", tags=["ubicaciones"])
-
-
-def get_auth_service(db: Session = Depends(get_db)) -> AuthService:
-    """Inyección de dependencias para AuthService"""
-    usuario_repository = UsuarioRepository(db)
-    return AuthService(usuario_repository)
 
 
 def get_ubicacion_service(db: Session = Depends(get_db)) -> UbicacionService:

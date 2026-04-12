@@ -89,8 +89,16 @@ def upgrade() -> None:
     op.add_column('reservas', sa.Column('metodo_pago', sa.String(30), nullable=True))
     op.add_column('reservas', sa.Column('fecha_pago', sa.DateTime, nullable=True))
 
+    # ------------------------------------------------------------------ #
+    # usuarios: drop password column (contraseñas gestionadas por Supabase Auth)
+    # ------------------------------------------------------------------ #
+    op.drop_column('usuarios', 'password')
+
 
 def downgrade() -> None:
+    # usuarios: restaurar columna password
+    op.add_column('usuarios', sa.Column('password', sa.String(128), nullable=True))
+
     # reservas
     op.drop_column('reservas', 'fecha_pago')
     op.drop_column('reservas', 'metodo_pago')

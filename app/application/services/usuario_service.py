@@ -1,10 +1,8 @@
 ﻿from typing import List, Optional, Dict
 from fastapi import HTTPException, status
 from app.infrastructure.repositories.usuario_repository import UsuarioRepository
-from app.domain.schemas.usuario import UsuarioCreate, UsuarioUpdate, UsuarioResponse, UsuarioCompleteResponse, UsuariosEstadisticas, UsuariosRolResponse
-from app.infrastructure.security import hash_password, create_email_verification_token, verify_email_token
+from app.domain.schemas.usuario import UsuarioCreate, UsuarioUpdate, UsuarioResponse, UsuariosEstadisticas, UsuariosRolResponse, UsuarioCompleteResponse
 from app.domain.models.usuario import Usuario
-from app.infrastructure.integrations.email_service import EmailService
 import logging
 
 logger = logging.getLogger(__name__)
@@ -98,53 +96,28 @@ class UsuarioService:
         return [UsuarioResponse.model_validate(u) for u in usuarios]
 
     def create_usuario(self, usuario_data: UsuarioCreate) -> UsuarioResponse:
-        """Crea un nuevo usuario"""
-        logger.info(f"Intentando crear usuario: {usuario_data.correo}, rol: {usuario_data.rol}")
+        """Crea el perfil del usuario en la BD (Supabase Auth gestiona la contraseña)"""
+        logger.info(f"Creando usuario: {usuario_data.correo}, rol: {usuario_data.rol}")
         
-        # Verificar si el email ya existe
         existing_user = self.usuario_repository.get_by_email(usuario_data.correo)
         if existing_user:
-            logger.warning(f"Email ya registrado: {usuario_data.correo}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="El email ya está registrado"
             )
 
-        # Validar rol
         valid_roles = ["cliente", "empleada", "admin"]
         if usuario_data.rol not in valid_roles:
-            logger.error(f"Rol inválido recibido: '{usuario_data.rol}'")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Rol inválido. Debe ser uno de: {', '.join(valid_roles)}"
             )
 
-        # Hash de la contraseña
-        hashed_password = hash_password(usuario_data.password)
-
-        # Las empleadas se activan directamente, los clientes quedan pendientes de verificación
         if usuario_data.rol == "empleada":
             usuario_data.estado = "activo"
         
-        # Crear usuario con estado según rol
-        usuario = self.usuario_repository.create(usuario_data, hashed_password)
-        
-        # Enviar email de verificación solo si el usuario es cliente y está pendiente
-        if usuario.rol == "cliente" and usuario.estado == "pendiente":
-            try:
-                token = create_email_verification_token(str(usuario.id))
-                email_sent = EmailService.send_verification_email(
-                    email=usuario.correo,
-                    token=token,
-                    nombre=usuario.nombre
-                )
-                if not email_sent:
-                    logger.warning(f"No se pudo enviar email de verificación a {usuario.correo}")
-            except Exception as e:
-                logger.error(f"Error al enviar email de verificación: {str(e)}")
-                # No fallamos la creación del usuario si el email no se envía
-        
-        logger.info(f"Usuario creado exitosamente: {usuario.correo}, rol: {usuario.rol}, estado: {usuario.estado}")
+        usuario = self.usuario_repository.create(usuario_data)
+        logger.info(f"Usuario creado: {usuario.correo}")
         return UsuarioResponse.model_validate(usuario)
 
     def update_usuario(self, usuario_id: int, usuario_data: UsuarioUpdate) -> UsuarioResponse:
@@ -176,12 +149,8 @@ class UsuarioService:
                 )
 
         # Hash de la contraseña si se proporciona
-        hashed_password = None
-        if usuario_data.password:
-            hashed_password = hash_password(usuario_data.password)
-
         # Actualizar usuario
-        usuario = self.usuario_repository.update(usuario_id, usuario_data, hashed_password)
+        usuario = self.usuario_repository.update(usuario_id, usuario_data)
         return UsuarioResponse.model_validate(usuario)
 
     def delete_usuario(self, usuario_id: int) -> dict:
@@ -203,72 +172,6 @@ class UsuarioService:
                 detail="Usuario no encontrado"
             )
         return UsuarioResponse.model_validate(usuario)
-
-    def verify_email(self, token: str) -> UsuarioResponse:
-        """
-        Verifica el email de un usuario usando el token de verificación.
-        Cambia el estado del usuario de 'pendiente' a 'activo'.
-        """
-        # Verificar y decodificar el token
-        user_id = verify_email_token(token)
-        
-        # Obtener el usuario
-        usuario = self.usuario_repository.get_by_id(user_id)
-        if not usuario:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Usuario no encontrado"
-            )
-        
-        # Verificar que el usuario está pendiente
-        if usuario.estado != "pendiente":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El usuario ya está activo o no requiere verificación"
-            )
-        
-        # Actualizar estado a activo
-        from app.domain.schemas.usuario import UsuarioUpdate
-        usuario_update = UsuarioUpdate(estado="activo")
-        usuario = self.usuario_repository.update(user_id, usuario_update, None)
-        
-        logger.info(f"Email verificado para usuario {user_id}")
-        return UsuarioResponse.model_validate(usuario)
-
-    def resend_verification_email(self, email: str) -> dict:
-        """
-        Reenvía el email de verificación a un usuario.
-        """
-        # Buscar usuario por email
-        usuario = self.usuario_repository.get_by_email(email)
-        if not usuario:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Usuario no encontrado"
-            )
-        
-        # Verificar que el usuario está pendiente
-        if usuario.estado != "pendiente":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El usuario ya está activo"
-            )
-        
-        # Generar y enviar nuevo token
-        token = create_email_verification_token(str(usuario.id))
-        email_sent = EmailService.send_verification_email(
-            email=usuario.correo,
-            token=token,
-            nombre=usuario.nombre
-        )
-        
-        if not email_sent:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error al enviar el email de verificación"
-            )
-        
-        return {"message": "Email de verificación reenviado exitosamente"}
 
     def get_usuario_complete_info(self, usuario_id: int) -> UsuarioCompleteResponse:
         """

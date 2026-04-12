@@ -31,14 +31,8 @@ class Settings(BaseSettings):
     DATABASE_POOL_SIZE: int = 5
     DATABASE_MAX_OVERFLOW: int = 10
 
-    # ==================== Seguridad / JWT ====================
-    SECRET_KEY: str
-    JWT_SECRET_KEY: str
-    JWT_ALGORITHM: str = "HS256"
-    JWT_ACCESS_TOKEN_LIFETIME: int = 30
-    JWT_REFRESH_TOKEN_LIFETIME: int = 10080  # 7 días
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    # ==================== Seguridad ====================
+    SECRET_KEY: str = "change-me"
 
     # ==================== CORS ====================
     # Se lee desde .env como string separado por comas
@@ -57,8 +51,16 @@ class Settings(BaseSettings):
     # ==================== Supabase ====================
     SUPABASE_URL: Optional[str] = None
     SUPABASE_SERVICE_KEY: Optional[str] = None
+    SUPABASE_ANON_KEY: Optional[str] = None
+    SUPABASE_JWT_AUDIENCE: str = "authenticated"
 
     # ==================== Properties ====================
+    @property
+    def supabase_jwt_issuer(self) -> str:
+        if self.SUPABASE_URL:
+            return f"{self.SUPABASE_URL}/auth/v1"
+        return ""
+
     @property
     def cors_origins(self) -> List[str]:
         """Convierte CORS_ORIGINS string a lista."""

@@ -3,8 +3,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.infrastructure.database import get_db
-from app.infrastructure.repositories.usuario_repository import UsuarioRepository
-from app.application.services.auth_service import AuthService
 from app.application.services.dashboard_service import DashboardService
 from app.domain.schemas.dashboard import ClienteDashboardResponse
 from app.domain.models.usuario import Usuario

@@ -3,25 +3,17 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from uuid import UUID
 from datetime import date, datetime, timedelta, time
-from app.infrastructure.auth import oauth2_scheme
 from app.presentation.dependencies import get_db, get_current_user, require_role
 from app.infrastructure.repositories.reserva_repository import ReservaRepository
 from app.infrastructure.repositories.usuario_repository import UsuarioRepository
 from app.infrastructure.repositories.plan_repository import PlanRepository
 from app.infrastructure.repositories.ubicacion_repository import UbicacionRepository
 from app.application.services.reserva_service import ReservaService
-from app.application.services.auth_service import AuthService
 from app.domain.schemas.reserva import ReservaCreate, ReservaUpdate, ReservaResponse, ReservasWithStatsResponse
 from app.domain.models.usuario import Usuario
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/reservas", tags=["reservas"])
-
-
-def get_auth_service(db: Session = Depends(get_db)) -> AuthService:
-    """Inyección de dependencias para AuthService"""
-    usuario_repository = UsuarioRepository(db)
-    return AuthService(usuario_repository)
 
 
 def get_reserva_service(db: Session = Depends(get_db)) -> ReservaService:

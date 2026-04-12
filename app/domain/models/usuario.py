@@ -27,7 +27,6 @@ class Usuario(Base):
     nombre = Column(String(100), nullable=False)
     apellido = Column(String(100), nullable=False)
     correo = Column(String(255), unique=True, nullable=False, index=True)
-    password = Column(String(128), nullable=False)
     documento = Column(String(20), unique=True, nullable=True)
     telefono = Column(String(15), nullable=False)
     tipo_persona = Column(String(20), nullable=True)  # natural, juridica

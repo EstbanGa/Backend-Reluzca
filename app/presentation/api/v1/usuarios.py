@@ -1,21 +1,13 @@
 ﻿from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 from typing import List
-from app.infrastructure.auth import oauth2_scheme
 from app.presentation.dependencies import get_db, get_current_user, require_role
 from app.infrastructure.repositories.usuario_repository import UsuarioRepository
 from app.application.services.usuario_service import UsuarioService
-from app.application.services.auth_service import AuthService
 from app.domain.schemas.usuario import UsuarioCreate, UsuarioUpdate, UsuarioResponse, UsuariosRolResponse
 from app.domain.models.usuario import Usuario
 
 router = APIRouter(prefix="/usuarios", tags=["usuarios"])
-
-
-def get_auth_service(db: Session = Depends(get_db)) -> AuthService:
-    """Inyección de dependencias para AuthService"""
-    usuario_repository = UsuarioRepository(db)
-    return AuthService(usuario_repository)
 
 
 def get_usuario_service(db: Session = Depends(get_db)) -> UsuarioService:
@@ -61,26 +53,13 @@ def get_usuarios_by_rol(
 
 @router.get("/empleadas")
 async def get_empleadas(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-    auth_service: AuthService = Depends(get_auth_service),
+    current_user: Usuario = Depends(get_current_user),
     usuario_service: UsuarioService = Depends(get_usuario_service)
 ):
     """
-    Obtiene la lista de todas las empleadas activas
-    
-    Retorna una lista de empleadas con su información básica
-    Accesible para usuarios autenticados
+    Obtiene la lista de todas las empleadas activas.
+    Requiere autenticación.
     """
-    # Verificar autenticación
-    current_user = auth_service.get_current_user(token)
-    if not current_user:
-        from fastapi import HTTPException
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="No se pudo validar las credenciales"
-        )
-    
     return usuario_service.get_empleadas()
 
 
