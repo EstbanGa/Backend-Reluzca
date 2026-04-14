@@ -29,12 +29,14 @@ async def get_current_active_user(current_user: Usuario = Depends(get_current_us
     return current_user
 
 
-def require_role(required_role: str):
+def require_role(required_roles):
+    if isinstance(required_roles, str):
+        required_roles = [required_roles]
     async def role_checker(current_user: Usuario = Depends(get_current_user)) -> Usuario:
-        if current_user.rol != required_role:
+        if current_user.rol not in required_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Acceso denegado. Se requiere rol: {required_role}",
+                detail=f"Acceso denegado. Se requiere uno de los roles: {required_roles}",
             )
         return current_user
     return role_checker
