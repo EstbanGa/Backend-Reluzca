@@ -8,8 +8,10 @@ from app.infrastructure.database import Base
 from app.domain.models.usuario import Usuario
 from app.domain.models.actividad import Actividad, plan_actividades
 from app.domain.models.plan import Plan
-from app.domain.models.ubicacion import UbicacionServicio
+from app.domain.models.ubicacion import UbicacionServicio, UbicacionesEmpleada
 from app.domain.models.reserva import Reserva
+from app.domain.models.reserva_actividad import ReservaActividad
+from app.domain.models.foto_servicio import FotoServicio
 from app.domain.models.notificacion import NotificacionServicio
 from app.domain.models.pqrs import PQRS
 from app.domain.models.calificacion import Calificacion
@@ -21,7 +23,10 @@ __all__ = [
     "plan_actividades",
     "Plan",
     "UbicacionServicio",
+    "UbicacionesEmpleada",
     "Reserva",
+    "ReservaActividad",
+    "FotoServicio",
     "NotificacionServicio",
     "PQRS",
     "Calificacion",

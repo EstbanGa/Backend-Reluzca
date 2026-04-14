@@ -7,6 +7,7 @@ from app.infrastructure.repositories.usuario_repository import UsuarioRepository
 from app.application.services.usuario_service import UsuarioService
 from app.infrastructure.security import verify_supabase_token, SupabaseTokenData
 from app.domain.schemas.usuario import UsuarioCreate, UsuarioResponse, LoginRequest, LoginResponse
+from pydantic import BaseModel
 import logging
 
 logger = logging.getLogger(__name__)
@@ -123,3 +124,113 @@ def me(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
     return UsuarioResponse.model_validate(user)
+
+
+@router.post("/admin/create-user", response_model=UsuarioResponse, status_code=status.HTTP_201_CREATED)
+def admin_create_user(
+    usuario_data: UsuarioCreate,
+    token_data: SupabaseTokenData = Depends(verify_supabase_token),
+    db: Session = Depends(get_db),
+):
+    """
+    Crea un usuario con cualquier rol. Solo accesible para admins.
+    """
+    # Verificar que el solicitante es admin
+    repo = UsuarioRepository(db)
+    admin_user = repo.get_by_id(token_data.user_id)
+    if not admin_user or admin_user.rol != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los administradores pueden crear usuarios",
+        )
+
+    # Validar rol permitido
+    if usuario_data.rol not in ("admin", "cliente", "empleada"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Rol inválido. Debe ser: admin, cliente o empleada",
+        )
+
+    # Verificar que el email no exista en BD
+    if repo.get_by_email(usuario_data.correo):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El email ya está registrado",
+        )
+
+    supabase = _supabase_admin()
+
+    # Crear usuario en Supabase Auth
+    try:
+        auth_response = supabase.auth.admin.create_user({
+            "email": usuario_data.correo,
+            "password": usuario_data.password,
+            "email_confirm": True,
+        })
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error al crear cuenta: {str(e)}",
+        )
+
+    # Crear perfil en BD con el UUID de Supabase Auth
+    try:
+        from uuid import UUID
+        usuario_data.id = UUID(str(auth_response.user.id))
+        service = UsuarioService(repo)
+        return service.create_usuario(usuario_data)
+    except HTTPException:
+        try:
+            supabase.auth.admin.delete_user(str(auth_response.user.id))
+        except Exception:
+            pass
+        raise
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.post("/change-password")
+def change_password(
+    request: ChangePasswordRequest,
+    token_data: SupabaseTokenData = Depends(verify_supabase_token),
+    db: Session = Depends(get_db),
+):
+    """
+    Cambia la contraseña del usuario autenticado.
+    Verifica la contraseña actual via login y luego actualiza via admin API.
+    """
+    repo = UsuarioRepository(db)
+    user = repo.get_by_id(token_data.user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+
+    # Verificar contraseña actual haciendo login
+    try:
+        supabase_anon = create_client(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY)
+        supabase_anon.auth.sign_in_with_password(
+            {"email": user.correo, "password": request.current_password}
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La contraseña actual es incorrecta",
+        )
+
+    # Actualizar contraseña via admin API
+    try:
+        supabase_admin = _supabase_admin()
+        supabase_admin.auth.admin.update_user_by_id(
+            str(token_data.user_id),
+            {"password": request.new_password},
+        )
+    except Exception as e:
+        logger.error(f"Error al cambiar contraseña: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al actualizar la contraseña",
+        )
+
+    return {"message": "Contraseña actualizada correctamente"}

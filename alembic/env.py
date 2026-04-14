@@ -21,6 +21,8 @@ from app.domain.models.ubicacion import UbicacionServicio
 from app.domain.models.notificacion import NotificacionServicio
 from app.domain.models.pqrs import PQRS
 from app.domain.models.calificacion import Calificacion
+from app.domain.models.reserva_actividad import ReservaActividad
+from app.domain.models.foto_servicio import FotoServicio
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

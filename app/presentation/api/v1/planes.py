@@ -1,7 +1,8 @@
-﻿from fastapi import APIRouter, Depends, Query, status
+﻿from fastapi import APIRouter, Depends, Query, status, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from uuid import UUID
+from pydantic import BaseModel
 from app.presentation.dependencies import get_db, get_current_user, require_role
 from app.infrastructure.repositories.plan_repository import PlanRepository
 from app.application.services.plan_service import PlanService
@@ -83,3 +84,24 @@ async def deactivate_plan(
 ):
     """Desactiva un plan"""
     return plan_service.deactivate_plan(plan_id)
+
+
+class SetActividadesRequest(BaseModel):
+    actividad_ids: List[UUID]
+
+
+@router.post("/{plan_id}/actividades", response_model=PlanResponse)
+def set_plan_actividades(
+    plan_id: UUID,
+    data: SetActividadesRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Reemplaza (sincroniza) todas las actividades de un plan.
+    Enviar lista vacía para quitar todas las actividades.
+    """
+    plan_repo = PlanRepository(db)
+    plan = plan_repo.set_actividades(plan_id, data.actividad_ids)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan no encontrado")
+    return plan

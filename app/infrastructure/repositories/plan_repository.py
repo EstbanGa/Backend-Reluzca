@@ -2,6 +2,7 @@
 from typing import List, Optional
 from uuid import UUID
 from app.domain.models.plan import Plan
+from app.domain.models.actividad import Actividad
 from app.domain.schemas.plan import PlanCreate, PlanUpdate
 
 
@@ -74,6 +75,17 @@ class PlanRepository:
             return None
 
         db_plan.estado = False
+        self.db.commit()
+        self.db.refresh(db_plan)
+        return db_plan
+
+    def set_actividades(self, plan_id: UUID, actividad_ids: List[UUID]) -> Optional[Plan]:
+        """Reemplaza las actividades de un plan con las IDs provistas."""
+        db_plan = self.get_by_id(plan_id)
+        if not db_plan:
+            return None
+        actividades = self.db.query(Actividad).filter(Actividad.id.in_(actividad_ids)).all()
+        db_plan.actividades = actividades
         self.db.commit()
         self.db.refresh(db_plan)
         return db_plan

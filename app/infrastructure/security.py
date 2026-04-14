@@ -1,18 +1,18 @@
 ﻿"""
-Security utilities for authentication using Supabase Auth + JWKS validation.
+Security utilities for authentication using Supabase Auth.
 
-The password is managed exclusively by Supabase Auth.
-This module validates the JWT tokens Supabase emits.
+Token validation is delegated to the Supabase Admin SDK (get_user call),
+which avoids JWKS/HS256 compatibility issues.
 """
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-import jwt
+import jwt as pyjwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jwt import PyJWKClient
 from pydantic import BaseModel
+from supabase import create_client
 import logging
 
 from app.core.config import settings
@@ -20,8 +20,6 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 security = HTTPBearer()
-
-_jwks_client: Optional[PyJWKClient] = None
 
 
 class SupabaseTokenData(BaseModel):
@@ -31,88 +29,52 @@ class SupabaseTokenData(BaseModel):
     exp: datetime
 
 
-def get_jwks_client() -> PyJWKClient:
-    global _jwks_client
-    if _jwks_client is None:
-        if not settings.SUPABASE_URL:
-            raise ValueError("SUPABASE_URL no esta configurado")
-        jwks_url = f"{settings.SUPABASE_URL}/auth/v1/.well-known/jwks.json"
-        _jwks_client = PyJWKClient(jwks_url)
-    return _jwks_client
-
-
 async def verify_supabase_token(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> SupabaseTokenData:
-    """Valida el JWT de Supabase usando JWKS y retorna los datos del usuario."""
+    """
+    Valida el JWT de Supabase delegando la verificación al Admin SDK.
+    Funciona con HS256 (default) y RS256 sin configuración extra.
+    """
     token = credentials.credentials
 
-    if not settings.SUPABASE_URL:
+    if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Supabase no esta configurado",
+            detail="Supabase no está configurado en el servidor",
         )
 
     try:
-        jwks_client = get_jwks_client()
-        signing_key = jwks_client.get_signing_key_from_jwt(token)
+        sup = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
+        response = sup.auth.get_user(token)
 
-        unverified_header = jwt.get_unverified_header(token)
-        algorithm = unverified_header.get("alg", "RS256")
-
-        supported = ["RS256", "ES256", "HS256"]
-        if algorithm not in supported:
+        if not response.user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Algoritmo '{algorithm}' no soportado",
+                detail="Token inválido",
             )
 
-        payload = jwt.decode(
-            token,
-            signing_key.key,
-            algorithms=[algorithm],
-            audience=settings.SUPABASE_JWT_AUDIENCE,
-            issuer=settings.supabase_jwt_issuer,
-        )
-
-        user_id_str = payload.get("sub")
-        if not user_id_str:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token invalido: falta 'sub'",
-            )
+        # Extraer exp del token sin re-verificar firma (ya lo verificó Supabase)
+        unverified = pyjwt.decode(token, options={"verify_signature": False})
 
         return SupabaseTokenData(
-            user_id=UUID(user_id_str),
-            email=payload.get("email"),
-            exp=datetime.fromtimestamp(payload.get("exp", 0)),
+            user_id=UUID(str(response.user.id)),
+            email=response.user.email,
+            exp=datetime.fromtimestamp(unverified.get("exp", 0)),
         )
 
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token expirado. Inicia sesion nuevamente.",
-        )
-    except jwt.InvalidTokenError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Token invalido: {str(e)}",
-        )
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Error al procesar token: {str(e)}",
-        )
     except HTTPException:
         raise
     except Exception as e:
         error_msg = str(e)
-        if "404" in error_msg or "Not Found" in error_msg:
+        logger.warning(f"Error al validar token: {error_msg}")
+        if any(k in error_msg.lower() for k in ["invalid", "expired", "jwt", "unauthorized"]):
             raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="No se pudo conectar con Supabase JWKS. Verifica SUPABASE_URL.",
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token inválido o expirado. Inicia sesión nuevamente.",
             )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Error al validar token: {error_msg}",
         )
+

@@ -67,3 +67,37 @@ class NotificacionRepository:
             self.db.commit()
             return True
         return False
+
+    def create(
+        self,
+        id_usuario_destino: UUID,
+        tipo: str,
+        mensaje: str,
+        canal: str = "in_app",
+        id_reserva: Optional[UUID] = None,
+        id_pqrs: Optional[UUID] = None,
+    ) -> NotificacionServicio:
+        """Crea una nueva notificación."""
+        notif = NotificacionServicio(
+            id_usuario_destino=id_usuario_destino,
+            tipo=tipo,
+            mensaje=mensaje,
+            canal=canal,
+            id_reserva=id_reserva,
+            id_pqrs=id_pqrs,
+            leida=False,
+        )
+        self.db.add(notif)
+        self.db.commit()
+        self.db.refresh(notif)
+        return notif
+
+    def get_all_with_details(self, skip: int = 0, limit: int = 100) -> List[NotificacionServicio]:
+        """Obtiene todas las notificaciones con ordenamiento por fecha (admin)."""
+        return (
+            self.db.query(NotificacionServicio)
+            .order_by(NotificacionServicio.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )

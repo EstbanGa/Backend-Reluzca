@@ -61,6 +61,8 @@ class UbicacionServicio(Base):
             "id_usuario": str(self.id_usuario),
             "nombre": self.nombre,
             "tamaño": self.tamaño,
+            "area_m2": float(self.area_m2) if self.area_m2 else None,
+            "area_ft2": float(self.area_ft2) if self.area_ft2 else None,
             "baños": self.baños,
             "pisos": self.pisos,
             "ubicacion": self.ubicacion,

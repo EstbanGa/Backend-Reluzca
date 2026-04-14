@@ -198,6 +198,77 @@ def cancel_reserva(
     return reserva_service.cancel_reserva(reserva_id)
 
 
+@router.get("/empleadas/{empleada_id}/disponibilidad")
+def get_disponibilidad_empleada(
+    empleada_id: str,
+    dias: int = Query(60, ge=1, le=90),
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna el calendario de disponibilidad de una empleada para los próximos N días.
+    Permite múltiples servicios por día — un día se marca como 'ocupado' solo si ya tiene
+    2 o más reservas activas. Un día con 1 reserva sigue apareciendo como disponible
+    para que el cliente pueda agendar un segundo servicio en horario diferente.
+    """
+    try:
+        from app.domain.models.reserva import Reserva as ReservaModel
+        from datetime import timedelta, date as date_type
+        import calendar as cal_module
+
+        hoy = date_type.today()
+
+        # Obtener reservas futuras de la empleada (estados activos)
+        reservas = (
+            db.query(ReservaModel)
+            .filter(
+                ReservaModel.id_empleada == empleada_id,
+                ReservaModel.fecha >= hoy,
+                ReservaModel.estado.in_(['programada', 'confirmada', 'en_proceso', 'pendiente'])
+            )
+            .all()
+        )
+
+        # Índice: fecha → cantidad de reservas
+        reservas_por_dia: dict = {}
+        for r in reservas:
+            key = r.fecha.isoformat() if r.fecha else None
+            if key:
+                reservas_por_dia[key] = reservas_por_dia.get(key, 0) + 1
+
+        calendario = []
+        dias_semana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+
+        for i in range(dias):
+            fecha = hoy + timedelta(days=i)
+            fecha_str = fecha.isoformat()
+            dia_num = fecha.weekday()  # 0=lunes ... 6=domingo
+            es_domingo = dia_num == 6
+            es_sabado = dia_num == 5
+            count = reservas_por_dia.get(fecha_str, 0)
+            # Disponible si: no es domingo, no es pasado, y tiene menos de 2 reservas
+            disponible = not es_domingo and count < 2
+
+            calendario.append({
+                "fecha": fecha_str,
+                "disponible": disponible,
+                "dia_semana": dias_semana[dia_num],
+                "es_hoy": fecha == hoy,
+                "es_pasado": False,  # solo fechas futuras
+                "es_sabado": es_sabado,
+                "es_domingo": es_domingo,
+                "sobrecargo_sabado": es_sabado,
+                "reservas_existentes": count
+            })
+
+        return {"success": True, "calendario": calendario}
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener disponibilidad: {str(e)}"
+        )
+
+
 @router.get("/planes/")
 def get_planes_for_reserva(db: Session = Depends(get_db)):
     """
@@ -761,3 +832,273 @@ async def crear_reservas(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al crear reservas: {str(e)}"
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CHECKLIST DE ACTIVIDADES POR RESERVA (Items 14/15)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SetActividadesReservaRequest(BaseModel):
+    actividad_ids: List[str]
+    programada: bool = True
+
+
+class ToggleActividadRequest(BaseModel):
+    ejecutada: bool
+    notas: Optional[str] = None
+
+
+@router.get("/{reserva_id}/actividades")
+def get_actividades_reserva(reserva_id: UUID, db: Session = Depends(get_db)):
+    """Obtiene la lista de actividades (checklist) de una reserva."""
+    from app.domain.models.reserva_actividad import ReservaActividad
+    from app.domain.models.actividad import Actividad
+    items = (
+        db.query(ReservaActividad)
+        .filter(ReservaActividad.id_reserva == reserva_id)
+        .all()
+    )
+    result = []
+    for item in items:
+        actividad = db.query(Actividad).filter(Actividad.id == item.id_actividad).first()
+        result.append({
+            "id": str(item.id),
+            "id_actividad": str(item.id_actividad),
+            "nombre": actividad.nombre if actividad else "?",
+            "precio_unitario": float(actividad.precio_unitario) if actividad and actividad.precio_unitario else None,
+            "duracion_estimada_minutos": actividad.duracion_estimada_minutos if actividad else None,
+            "programada": item.programada,
+            "ejecutada": item.ejecutada,
+            "notas": item.notas,
+        })
+    return {"actividades": result}
+
+
+@router.post("/{reserva_id}/actividades")
+def set_actividades_reserva(
+    reserva_id: UUID,
+    data: SetActividadesReservaRequest,
+    db: Session = Depends(get_db),
+):
+    """Establece el checklist de actividades de una reserva (reemplaza el existente)."""
+    from app.domain.models.reserva_actividad import ReservaActividad
+    import uuid as uuid_lib
+    # Eliminar existentes
+    db.query(ReservaActividad).filter(ReservaActividad.id_reserva == reserva_id).delete()
+    # Crear nuevos
+    for act_id in data.actividad_ids:
+        item = ReservaActividad(
+            id=uuid_lib.uuid4(),
+            id_reserva=reserva_id,
+            id_actividad=uuid_lib.UUID(act_id),
+            programada=data.programada,
+            ejecutada=False,
+        )
+        db.add(item)
+    db.commit()
+    return {"success": True, "message": f"{len(data.actividad_ids)} actividades asignadas"}
+
+
+@router.patch("/{reserva_id}/actividades/{item_id}/toggle")
+def toggle_actividad_ejecutada(
+    reserva_id: UUID,
+    item_id: UUID,
+    data: ToggleActividadRequest,
+    db: Session = Depends(get_db),
+):
+    """Marca una actividad como ejecutada o no ejecutada."""
+    from app.domain.models.reserva_actividad import ReservaActividad
+    item = db.query(ReservaActividad).filter(
+        ReservaActividad.id == item_id,
+        ReservaActividad.id_reserva == reserva_id,
+    ).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item no encontrado")
+    item.ejecutada = data.ejecutada
+    if data.notas is not None:
+        item.notas = data.notas
+    db.commit()
+    return {"success": True, "ejecutada": item.ejecutada}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FOTOS DEL SERVICIO (Item 14)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class AddFotoRequest(BaseModel):
+    url_foto: str
+    descripcion: Optional[str] = None
+    tipo: str = "durante"  # antes, durante, despues
+    subida_por: Optional[str] = None
+
+
+@router.get("/{reserva_id}/fotos")
+def get_fotos_reserva(reserva_id: UUID, db: Session = Depends(get_db)):
+    """Obtiene las fotos de una reserva."""
+    from app.domain.models.foto_servicio import FotoServicio
+    fotos = db.query(FotoServicio).filter(FotoServicio.id_reserva == reserva_id).all()
+    return {
+        "fotos": [
+            {
+                "id": str(f.id),
+                "url_foto": f.url_foto,
+                "descripcion": f.descripcion,
+                "tipo": f.tipo,
+                "created_at": f.created_at.isoformat() if f.created_at else None,
+            }
+            for f in fotos
+        ]
+    }
+
+
+@router.post("/{reserva_id}/fotos", status_code=status.HTTP_201_CREATED)
+def add_foto_reserva(
+    reserva_id: UUID,
+    data: AddFotoRequest,
+    db: Session = Depends(get_db),
+):
+    """Registra una foto (URL ya subida a Supabase Storage) en la reserva."""
+    from app.domain.models.foto_servicio import FotoServicio
+    import uuid as uuid_lib
+    foto = FotoServicio(
+        id=uuid_lib.uuid4(),
+        id_reserva=reserva_id,
+        url_foto=data.url_foto,
+        descripcion=data.descripcion,
+        tipo=data.tipo,
+        subida_por=uuid_lib.UUID(data.subida_por) if data.subida_por else None,
+    )
+    db.add(foto)
+    db.commit()
+    return {"id": str(foto.id), "url_foto": foto.url_foto, "tipo": foto.tipo}
+
+
+@router.delete("/{reserva_id}/fotos/{foto_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_foto_reserva(
+    reserva_id: UUID,
+    foto_id: UUID,
+    db: Session = Depends(get_db),
+):
+    """Elimina una foto de una reserva."""
+    from app.domain.models.foto_servicio import FotoServicio
+    foto = db.query(FotoServicio).filter(
+        FotoServicio.id == foto_id,
+        FotoServicio.id_reserva == reserva_id,
+    ).first()
+    if foto:
+        db.delete(foto)
+        db.commit()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GANANCIAS EMPLEADA (Items 16/17)
+# ─────────────────────────────────────────────────────────────────────────────
+
+PORCENTAJE_EMPLEADA = 0.60  # 60% del precio total va a la empleada
+
+
+@router.get("/empleada/{empleada_id}/ganancias")
+def get_ganancias_empleada(
+    empleada_id: UUID,
+    mes: Optional[str] = Query(None, description="YYYY-MM, por defecto mes actual"),
+    db: Session = Depends(get_db),
+):
+    """
+    Calcula las ganancias de una empleada en un período mensual.
+    Por defecto devuelve el mes actual + los 5 meses anteriores como histórico.
+    """
+    from app.domain.models.reserva import Reserva as ReservaModel
+    from app.domain.models.plan import Plan as PlanModel
+    from datetime import date as date_type
+    import calendar as cal_module
+
+    hoy = date_type.today()
+
+    # Determinar mes objetivo
+    if mes:
+        try:
+            anio, mes_num = int(mes[:4]), int(mes[5:7])
+        except Exception:
+            raise HTTPException(status_code=400, detail="Formato de mes inválido. Use YYYY-MM")
+    else:
+        anio, mes_num = hoy.year, hoy.month
+
+    primer_dia = date_type(anio, mes_num, 1)
+    ultimo_dia_num = cal_module.monthrange(anio, mes_num)[1]
+    ultimo_dia = date_type(anio, mes_num, ultimo_dia_num)
+
+    # Reservas completadas del mes
+    reservas_mes = (
+        db.query(ReservaModel)
+        .filter(
+            ReservaModel.id_empleada == empleada_id,
+            ReservaModel.estado == "completada",
+            ReservaModel.fecha >= primer_dia,
+            ReservaModel.fecha <= ultimo_dia,
+        )
+        .all()
+    )
+
+    total_bruto = sum(float(r.precio_total or 0) for r in reservas_mes)
+    total_neto = total_bruto * PORCENTAJE_EMPLEADA
+
+    detalle = []
+    for r in reservas_mes:
+        bruto = float(r.precio_total or 0)
+        detalle.append({
+            "id_reserva": str(r.id),
+            "fecha": r.fecha.isoformat() if r.fecha else None,
+            "precio_total": bruto,
+            "ganancia": round(bruto * PORCENTAJE_EMPLEADA, 2),
+        })
+
+    # Histórico: últimos 6 meses
+    historico = []
+    for i in range(6):
+        m = mes_num - i
+        a = anio
+        while m <= 0:
+            m += 12
+            a -= 1
+        p1 = date_type(a, m, 1)
+        p2 = date_type(a, m, cal_module.monthrange(a, m)[1])
+        total_h = (
+            db.query(ReservaModel)
+            .filter(
+                ReservaModel.id_empleada == empleada_id,
+                ReservaModel.estado == "completada",
+                ReservaModel.fecha >= p1,
+                ReservaModel.fecha <= p2,
+            )
+            .count()
+        )
+        bruto_h = sum(
+            float(r.precio_total or 0)
+            for r in db.query(ReservaModel)
+            .filter(
+                ReservaModel.id_empleada == empleada_id,
+                ReservaModel.estado == "completada",
+                ReservaModel.fecha >= p1,
+                ReservaModel.fecha <= p2,
+            )
+            .all()
+        )
+        historico.append({
+            "mes": f"{a}-{m:02d}",
+            "total_servicios": total_h,
+            "total_bruto": round(bruto_h, 2),
+            "total_neto": round(bruto_h * PORCENTAJE_EMPLEADA, 2),
+        })
+
+    return {
+        "empleada_id": str(empleada_id),
+        "mes": f"{anio}-{mes_num:02d}",
+        "resumen": {
+            "total_servicios": len(reservas_mes),
+            "total_bruto": round(total_bruto, 2),
+            "total_neto": round(total_neto, 2),
+            "porcentaje_empleada": int(PORCENTAJE_EMPLEADA * 100),
+        },
+        "detalle": detalle,
+        "historico": historico,
+    }

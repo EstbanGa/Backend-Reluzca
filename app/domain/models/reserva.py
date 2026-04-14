@@ -84,7 +84,21 @@ class Reserva(Base):
         foreign_keys="Calificacion.id_reserva",
         back_populates="reserva"
     )
-    
+
+    # Actividades del servicio (checklist)
+    actividades_detalle = relationship(
+        "ReservaActividad",
+        back_populates="reserva",
+        cascade="all, delete-orphan"
+    )
+
+    # Fotos del servicio
+    fotos = relationship(
+        "FotoServicio",
+        back_populates="reserva",
+        cascade="all, delete-orphan"
+    )
+
     # Ubicaciones de empleada
     ubicaciones_empleada = relationship(
         "UbicacionesEmpleada",

@@ -1,11 +1,18 @@
-﻿from fastapi import APIRouter, Depends, Query, status
+﻿from fastapi import APIRouter, Depends, Query, status, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
+from pydantic import BaseModel, constr
 from app.presentation.dependencies import get_db, get_current_user, require_role
 from app.infrastructure.repositories.usuario_repository import UsuarioRepository
 from app.application.services.usuario_service import UsuarioService
 from app.domain.schemas.usuario import UsuarioCreate, UsuarioUpdate, UsuarioResponse, UsuariosRolResponse
 from app.domain.models.usuario import Usuario
+from app.core.config import settings
+from supabase import create_client
+
+
+class AdminPasswordChange(BaseModel):
+    nueva_contrasena: str
 
 router = APIRouter(prefix="/usuarios", tags=["usuarios"])
 
@@ -135,6 +142,37 @@ def deactivate_usuario(
 ):
     """Desactiva un usuario (solo admin)"""
     return usuario_service.deactivate_usuario(usuario_id)
+
+
+@router.patch("/{usuario_id}/password", status_code=status.HTTP_200_OK)
+def admin_change_password(
+    usuario_id: str,
+    body: AdminPasswordChange,
+    current_user: Usuario = Depends(require_role(["admin"])),
+):
+    """Cambia la contraseña de cualquier usuario sin necesitar la original (solo admin)."""
+    if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Servicio de autenticación no configurado",
+        )
+    if len(body.nueva_contrasena) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="La contraseña debe tener al menos 6 caracteres",
+        )
+    try:
+        supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
+        supabase.auth.admin.update_user_by_id(
+            usuario_id,
+            {"password": body.nueva_contrasena},
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"No se pudo actualizar la contraseña: {e}",
+        )
+    return {"message": "Contraseña actualizada correctamente"}
 
 
 @router.get("/empleada/dashboard")
