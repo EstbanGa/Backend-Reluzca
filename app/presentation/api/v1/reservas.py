@@ -380,91 +380,14 @@ class CrearReservasRequest(BaseModel):
     tareas_extra: List[str]
 
 
-@router.get("/empleadas/{empleada_id}/disponibilidad")
-async def get_disponibilidad_empleada(
-    empleada_id: str,
-    db: Session = Depends(get_db)
-):
-    """
-    Obtiene la disponibilidad de una empleada para los próximos 60 días
-    Excluye domingos ya que no trabajan domingos
-    """
-    try:
-        usuario_repo = UsuarioRepository(db)
-        empleada = usuario_repo.get_by_id(empleada_id)
-        
-        if not empleada or empleada.rol != "empleada" or empleada.estado != "activo":
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Empleada no encontrada"
-            )
-        
-        # Obtener fecha actual y rango de 60 días
-        fecha_actual = date.today()
-        fecha_limite = fecha_actual + timedelta(days=60)
-        
-        # Obtener reservas ocupadas de la empleada
-        reserva_repo = ReservaRepository(db)
-        reservas = reserva_repo.get_by_empleada(empleada_id)
-        
-        fechas_ocupadas = set()
-        for reserva in reservas:
-            if (reserva.fecha >= fecha_actual and 
-                reserva.fecha <= fecha_limite and
-                reserva.estado in ['programada', 'en_progreso', 'completada']):
-                fechas_ocupadas.add(reserva.fecha)
-        
-        # Generar calendario de disponibilidad
-        calendario = []
-        fecha_iteracion = fecha_actual
-        
-        while fecha_iteracion <= fecha_limite:
-            es_domingo = fecha_iteracion.weekday() == 6
-            es_sabado = fecha_iteracion.weekday() == 5
-            
-            disponible = (
-                fecha_iteracion not in fechas_ocupadas and
-                not es_domingo and
-                fecha_iteracion >= fecha_actual
-            )
-            
-            calendario.append({
-                'fecha': fecha_iteracion.isoformat(),
-                'disponible': disponible,
-                'es_sabado': es_sabado,
-                'es_domingo': es_domingo,
-                'dia_semana': fecha_iteracion.strftime('%A'),
-                'es_hoy': fecha_iteracion == fecha_actual,
-                'es_pasado': fecha_iteracion < fecha_actual,
-                'sobrecargo_sabado': es_sabado
-            })
-            
-            fecha_iteracion += timedelta(days=1)
-        
-        return {
-            'success': True,
-            'empleada': {
-                'id': str(empleada.id),
-                'nombre': empleada.nombre,
-                'apellido': empleada.apellido,
-                'nombre_completo': f"{empleada.nombre} {empleada.apellido}"
-            },
-            'calendario': calendario
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al obtener disponibilidad: {str(e)}"
-        )
+# (duplicate /empleadas/{empleada_id}/disponibilidad removed – first registration is canonical)
 
 
 @router.get("/horarios/{plan_id}/{fecha}")
 async def get_horarios_disponibles(
     plan_id: str,
     fecha: str,
+    empleada_id: Optional[str] = Query(None, description="UUID de la empleada para filtrar slots ocupados"),
     db: Session = Depends(get_db)
 ):
     """
@@ -498,6 +421,14 @@ async def get_horarios_disponibles(
         horas_servicio = plan.horas_servicio if plan.horas_servicio else 4
         
         # Generar slots de horarios
+        # Horario laboral: 7am – 7pm
+        HORA_INICIO_LABORAL = time(7, 0)
+        HORA_FIN_LABORAL = time(19, 0)
+
+        # Respetar horario laboral sobreescribiendo el plan si excede límites
+        hora_inicio_plan = max(hora_inicio_plan, HORA_INICIO_LABORAL)
+        hora_final_plan = min(hora_final_plan, HORA_FIN_LABORAL)
+
         horarios_disponibles = []
         
         inicio_minutos = hora_inicio_plan.hour * 60 + hora_inicio_plan.minute
@@ -526,6 +457,47 @@ async def get_horarios_disponibles(
             })
             
             slot_actual += 30
+
+        # Filtrar slots que conflictúan con reservas existentes de la empleada
+        if empleada_id:
+            try:
+                from app.domain.models.reserva import Reserva as ReservaModel
+                from uuid import UUID as UUIDType
+
+                emp_uuid = UUIDType(empleada_id)
+                reservas_dia = (
+                    db.query(ReservaModel)
+                    .filter(
+                        ReservaModel.id_empleada == emp_uuid,
+                        ReservaModel.fecha == fecha_obj,
+                        ReservaModel.estado.in_(['programada', 'confirmada', 'en_proceso', 'pendiente'])
+                    )
+                    .all()
+                )
+
+                def slot_tiene_conflicto(s_ini: time, s_fin: time) -> bool:
+                    """True si el slot viola el gap de 1 hora con alguna reserva existente."""
+                    dt_base = datetime(2000, 1, 1)
+                    si = datetime.combine(dt_base.date(), s_ini)
+                    sf = datetime.combine(dt_base.date(), s_fin)
+                    gap = timedelta(hours=1)
+                    for r in reservas_dia:
+                        ri = datetime.combine(dt_base.date(), r.hora_inicio)
+                        rf = datetime.combine(dt_base.date(), r.hora_final)
+                        # Conflicto: no hay 1h antes ni 1h después
+                        if not (sf <= ri - gap or si >= rf + gap):
+                            return True
+                    return False
+
+                horarios_disponibles = [
+                    h for h in horarios_disponibles
+                    if not slot_tiene_conflicto(
+                        time(*[int(x) for x in h['hora_inicio'].split(':')]),
+                        time(*[int(x) for x in h['hora_final'].split(':')])
+                    )
+                ]
+            except Exception:
+                pass  # No filtrar si falla
         
         return {
             'success': True,
@@ -781,6 +753,49 @@ async def crear_reservas(
         ubicacion_uuid = UUID(request.ubicacion_id)
         usuario_uuid = ubicacion.id_usuario  # Cliente de la ubicación
         
+        # ── Validación de horario laboral (7am-7pm) y gap de 1 hora ──────────
+        HORA_INICIO_LABORAL = time(7, 0)
+        HORA_FIN_LABORAL = time(19, 0)
+        GAP_MINIMO = timedelta(hours=1)
+        ESTADOS_ACTIVOS = ['programada', 'confirmada', 'en_proceso', 'pendiente']
+
+        from app.domain.models.reserva import Reserva as ReservaModel
+
+        for fh in request.fechas_horarios:
+            fh_inicio = datetime.strptime(fh.hora_inicio, '%H:%M').time()
+            fh_final = datetime.strptime(fh.hora_final, '%H:%M').time()
+            fh_fecha = datetime.strptime(fh.fecha, '%Y-%m-%d').date()
+
+            if fh_inicio < HORA_INICIO_LABORAL or fh_final > HORA_FIN_LABORAL:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"El servicio del {fh.fecha} ({fh.hora_inicio}–{fh.hora_final}) debe estar dentro del horario laboral (07:00–19:00)"
+                )
+
+            reservas_dia = (
+                db.query(ReservaModel)
+                .filter(
+                    ReservaModel.id_empleada == empleada_uuid,
+                    ReservaModel.fecha == fh_fecha,
+                    ReservaModel.estado.in_(ESTADOS_ACTIVOS)
+                )
+                .all()
+            )
+
+            dt_base = datetime(2000, 1, 1)
+            si_new = datetime.combine(dt_base.date(), fh_inicio)
+            sf_new = datetime.combine(dt_base.date(), fh_final)
+
+            for r in reservas_dia:
+                si_r = datetime.combine(dt_base.date(), r.hora_inicio)
+                sf_r = datetime.combine(dt_base.date(), r.hora_final)
+                if not (sf_new <= si_r - GAP_MINIMO or si_new >= sf_r + GAP_MINIMO):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"La reserva del {fh.fecha} ({fh.hora_inicio}–{fh.hora_final}) no cumple la separación mínima de 1 hora con otra reserva existente ({r.hora_inicio.strftime('%H:%M')}–{r.hora_final.strftime('%H:%M')})"
+                    )
+        # ─────────────────────────────────────────────────────────────────────
+
         for fecha_horario in request.fechas_horarios:
             fecha_obj = datetime.strptime(fecha_horario.fecha, '%Y-%m-%d').date()
             
@@ -926,9 +941,10 @@ def toggle_actividad_ejecutada(
 # ─────────────────────────────────────────────────────────────────────────────
 
 class AddFotoRequest(BaseModel):
-    url_foto: str
+    url_foto: str  # base64 data URL o URL en la nube
     descripcion: Optional[str] = None
     tipo: str = "durante"  # antes, durante, despues
+    id_actividad: Optional[str] = None  # UUID del ítem en reservas_actividades
     subida_por: Optional[str] = None
 
 
@@ -944,6 +960,7 @@ def get_fotos_reserva(reserva_id: UUID, db: Session = Depends(get_db)):
                 "url_foto": f.url_foto,
                 "descripcion": f.descripcion,
                 "tipo": f.tipo,
+                "id_actividad": str(f.id_actividad) if f.id_actividad else None,
                 "created_at": f.created_at.isoformat() if f.created_at else None,
             }
             for f in fotos
@@ -957,7 +974,7 @@ def add_foto_reserva(
     data: AddFotoRequest,
     db: Session = Depends(get_db),
 ):
-    """Registra una foto (URL ya subida a Supabase Storage) en la reserva."""
+    """Registra una foto (base64 o URL) en la reserva. id_actividad la asocia a una actividad concreta."""
     from app.domain.models.foto_servicio import FotoServicio
     import uuid as uuid_lib
     foto = FotoServicio(
@@ -966,11 +983,17 @@ def add_foto_reserva(
         url_foto=data.url_foto,
         descripcion=data.descripcion,
         tipo=data.tipo,
+        id_actividad=uuid_lib.UUID(data.id_actividad) if data.id_actividad else None,
         subida_por=uuid_lib.UUID(data.subida_por) if data.subida_por else None,
     )
     db.add(foto)
     db.commit()
-    return {"id": str(foto.id), "url_foto": foto.url_foto, "tipo": foto.tipo}
+    return {
+        "id": str(foto.id),
+        "url_foto": foto.url_foto,
+        "tipo": foto.tipo,
+        "id_actividad": str(foto.id_actividad) if foto.id_actividad else None,
+    }
 
 
 @router.delete("/{reserva_id}/fotos/{foto_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1102,3 +1125,159 @@ def get_ganancias_empleada(
         "detalle": detalle,
         "historico": historico,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RESERVA ACTIVA DE LA EMPLEADA (panel "En Progreso" tipo Rappi)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/empleada/{empleada_id}/activa")
+def get_reserva_activa_empleada(
+    empleada_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Retorna la reserva que actualmente está en proceso para una empleada.
+    Si no hay ninguna 'en_proceso', busca la próxima 'programada' o 'confirmada' para hoy.
+    Incluye datos del cliente, plan, ubicación, checklist y fotos.
+    """
+    from app.domain.models.reserva import Reserva as ReservaModel
+    from app.domain.models.usuario import Usuario as UsuarioModel
+    from app.domain.models.plan import Plan as PlanModel
+    from app.domain.models.ubicacion import UbicacionServicio
+    from app.domain.models.reserva_actividad import ReservaActividad
+    from app.domain.models.actividad import Actividad
+    from app.domain.models.foto_servicio import FotoServicio
+    from datetime import date as date_type
+    import uuid as uuid_lib
+
+    try:
+        emp_uuid = uuid_lib.UUID(empleada_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="ID de empleada inválido")
+
+    hoy = date_type.today()
+
+    # 1. Reserva en_proceso (primera prioridad)
+    reserva = (
+        db.query(ReservaModel)
+        .filter(
+            ReservaModel.id_empleada == emp_uuid,
+            ReservaModel.estado == "en_proceso",
+        )
+        .order_by(ReservaModel.fecha.desc(), ReservaModel.hora_inicio.asc())
+        .first()
+    )
+
+    # 2. Reserva de hoy programada / confirmada (segunda prioridad)
+    if not reserva:
+        reserva = (
+            db.query(ReservaModel)
+            .filter(
+                ReservaModel.id_empleada == emp_uuid,
+                ReservaModel.fecha == hoy,
+                ReservaModel.estado.in_(["programada", "confirmada", "pendiente"]),
+            )
+            .order_by(ReservaModel.hora_inicio.asc())
+            .first()
+        )
+
+    if not reserva:
+        return {"activa": False, "reserva": None}
+
+    # Datos relacionados
+    cliente = db.query(UsuarioModel).filter(UsuarioModel.id == reserva.id_usuario).first()
+    plan = db.query(PlanModel).filter(PlanModel.id == reserva.id_plan).first() if reserva.id_plan else None
+    lugar = db.query(UbicacionServicio).filter(UbicacionServicio.id == reserva.id_lugar).first() if reserva.id_lugar else None
+
+    # Checklist de actividades
+    items = (
+        db.query(ReservaActividad)
+        .filter(ReservaActividad.id_reserva == reserva.id)
+        .all()
+    )
+    actividades = []
+    for item in items:
+        act = db.query(Actividad).filter(Actividad.id == item.id_actividad).first()
+        actividades.append({
+            "id": str(item.id),
+            "id_actividad": str(item.id_actividad),
+            "nombre": act.nombre if act else "?",
+            "descripcion": act.descripcion if act else None,
+            "duracion_estimada_minutos": act.duracion_estimada_minutos if act else None,
+            "programada": item.programada,
+            "ejecutada": item.ejecutada,
+            "notas": item.notas,
+        })
+
+    # Fotos
+    fotos = db.query(FotoServicio).filter(FotoServicio.id_reserva == reserva.id).all()
+    fotos_data = [
+        {
+            "id": str(f.id),
+            "url_foto": f.url_foto,
+            "tipo": f.tipo,
+            "descripcion": f.descripcion,
+            "id_actividad": str(f.id_actividad) if f.id_actividad else None,
+            "created_at": f.created_at.isoformat() if f.created_at else None,
+        }
+        for f in fotos
+    ]
+
+    return {
+        "activa": True,
+        "reserva": {
+            "id": str(reserva.id),
+            "fecha": reserva.fecha.isoformat() if reserva.fecha else None,
+            "hora_inicio": reserva.hora_inicio.strftime("%H:%M") if reserva.hora_inicio else None,
+            "hora_final": reserva.hora_final.strftime("%H:%M") if reserva.hora_final else None,
+            "estado": reserva.estado,
+            "precio_total": float(reserva.precio_total) if reserva.precio_total else None,
+            "descripcion": reserva.descripcion,
+            "cliente": {
+                "id": str(cliente.id),
+                "nombre": f"{cliente.nombre} {cliente.apellido}",
+                "telefono": cliente.telefono,
+                "correo": cliente.correo,
+            } if cliente else None,
+            "plan": {
+                "id": str(plan.id),
+                "nombre": plan.nombre,
+                "descripcion": plan.descripcion,
+            } if plan else None,
+            "lugar": {
+                "id": str(lugar.id),
+                "nombre": lugar.nombre,
+                "nombre_lugar": lugar.nombre_lugar,
+                "tipo_lugar": lugar.tipo_lugar,
+                "descripcion": lugar.descripcion,
+            } if lugar else None,
+            "actividades": actividades,
+            "fotos": fotos_data,
+        },
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COMPLETAR / INICIAR RESERVA (empleada)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class UpdateEstadoReservaRequest(BaseModel):
+    estado: str  # en_proceso, completada, etc.
+
+
+@router.patch("/{reserva_id}/estado")
+def update_estado_reserva(
+    reserva_id: UUID,
+    data: UpdateEstadoReservaRequest,
+    db: Session = Depends(get_db),
+):
+    """Cambia el estado de una reserva (empleada puede iniciar o completar)."""
+    from app.domain.models.reserva import Reserva as ReservaModel
+    reserva = db.query(ReservaModel).filter(ReservaModel.id == reserva_id).first()
+    if not reserva:
+        raise HTTPException(status_code=404, detail="Reserva no encontrada")
+    reserva.estado = data.estado
+    db.commit()
+    return {"success": True, "id": str(reserva.id), "estado": reserva.estado}
+
