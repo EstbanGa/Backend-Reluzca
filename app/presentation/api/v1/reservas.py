@@ -289,8 +289,19 @@ def get_planes_for_reserva(db: Session = Depends(get_db)):
                     "nombre": plan.nombre,
                     "descripcion": plan.descripcion,
                     "precio": float(plan.precio) if plan.precio else 0,
-                    "duracion_estimada_horas": plan.horas_servicio if hasattr(plan, 'horas_servicio') else 4,
-                    "servicios_asociados": plan.servicios_asociados if hasattr(plan, 'servicios_asociados') and plan.servicios_asociados else []
+                    "horas_servicio": plan.horas_servicio if hasattr(plan, 'horas_servicio') and plan.horas_servicio else 4,
+                    "hora_inicio": plan.hora_inicio.strftime('%H:%M') if hasattr(plan, 'hora_inicio') and plan.hora_inicio else None,
+                    "hora_final": plan.hora_final.strftime('%H:%M') if hasattr(plan, 'hora_final') and plan.hora_final else None,
+                    "tipo_plan": plan.tipo_plan if hasattr(plan, 'tipo_plan') else "full",
+                    "servicios_asociados": plan.servicios_asociados if hasattr(plan, 'servicios_asociados') and plan.servicios_asociados else [],
+                    "actividades": [
+                        {
+                            "id": str(a.id),
+                            "nombre": a.nombre,
+                            "precio_unitario": float(a.precio_unitario) if hasattr(a, 'precio_unitario') and a.precio_unitario else None,
+                        }
+                        for a in (plan.actividades if hasattr(plan, 'actividades') and plan.actividades else [])
+                    ]
                 }
                 for plan in planes
             ]
