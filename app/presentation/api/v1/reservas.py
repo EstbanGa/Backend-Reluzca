@@ -78,6 +78,22 @@ def get_reservas_by_cliente(
         )
 
 
+@router.get("/empleada/{empleada_id}/detalle")
+def get_reservas_by_empleada_detalle(
+    empleada_id: UUID,
+    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Obtiene reservas de una empleada con datos completos de cliente, plan y ubicación."""
+    if current_user.id != empleada_id and current_user.rol != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permiso para ver estas reservas",
+        )
+    svc = ReservaService(ReservaRepository(db), UsuarioRepository(db), PlanRepository(db), UbicacionRepository(db))
+    return svc.get_reservas_by_empleada_with_stats(empleada_id)
+
+
 @router.get("/empleada/{empleada_id}", response_model=List[ReservaResponse])
 def get_reservas_by_empleada(
     empleada_id: int,

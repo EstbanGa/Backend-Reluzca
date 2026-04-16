@@ -266,6 +266,99 @@ class ReservaService:
         reservas = self.reserva_repository.get_by_empleada(empleada_id, skip=skip, limit=limit)
         return [ReservaResponse.model_validate(r) for r in reservas]
 
+    def get_reservas_by_empleada_with_stats(self, empleada_id: UUID) -> Dict:
+        """
+        Obtiene reservas asignadas a una empleada con datos completos de cliente/plan/ubicacion.
+        Retorna la misma estructura que usa el frontend EmpleadaServicios.
+        """
+        from app.domain.models.reserva import Reserva
+        from sqlalchemy.orm import joinedload
+
+        reservas = (
+            self.reserva_repository.db.query(Reserva)
+            .options(
+                joinedload(Reserva.cliente),
+                joinedload(Reserva.plan),
+                joinedload(Reserva.lugar),
+            )
+            .filter(Reserva.id_empleada == empleada_id)
+            .order_by(Reserva.fecha.desc(), Reserva.hora_inicio.desc())
+            .all()
+        )
+
+        total = len(reservas)
+        pendientes = len([r for r in reservas if r.estado == "pendiente"])
+        en_progreso = len([r for r in reservas if r.estado in ["confirmada", "en_proceso", "programada"]])
+        completados = len([r for r in reservas if r.estado == "completada"])
+        cancelados = len([r for r in reservas if r.estado == "cancelada"])
+
+        servicios_list = []
+        for reserva in reservas:
+            cliente_info = {"nombre": "Desconocido", "telefono": "", "correo": ""}
+            if reserva.cliente:
+                nombre = f"{reserva.cliente.nombre or ''} {reserva.cliente.apellido or ''}".strip()
+                cliente_info = {
+                    "nombre": nombre or "Sin nombre",
+                    "telefono": reserva.cliente.telefono or "",
+                    "correo": reserva.cliente.correo or "",
+                }
+
+            plan_info = None
+            if reserva.plan:
+                actividades = []
+                if hasattr(reserva.plan, "actividades") and reserva.plan.actividades:
+                    actividades = [a.nombre for a in reserva.plan.actividades if a.nombre]
+                plan_info = {
+                    "id": str(reserva.plan.id),
+                    "nombre": reserva.plan.nombre,
+                    "descripcion": reserva.plan.descripcion,
+                    "servicios_asociados": actividades,
+                    "precio": float(reserva.plan.precio) if reserva.plan.precio else None,
+                }
+
+            ubicacion_info = None
+            if reserva.lugar:
+                ubicacion_info = {
+                    "id": str(reserva.lugar.id),
+                    "nombre": reserva.lugar.nombre,
+                    "tamaño": reserva.lugar.tamaño,
+                    "baños": reserva.lugar.baños,
+                    "pisos": reserva.lugar.pisos,
+                    "ubicacion": reserva.lugar.ubicacion,
+                    "nombre_lugar": reserva.lugar.nombre_lugar,
+                    "tipo_lugar": reserva.lugar.tipo_lugar,
+                    "descripcion": reserva.lugar.descripcion,
+                }
+
+            servicios_list.append({
+                "id": str(reserva.id),
+                "cliente": cliente_info,
+                "plan": plan_info,
+                "ubicacion": ubicacion_info,
+                "fecha": reserva.fecha.isoformat() if reserva.fecha else None,
+                "hora_inicio": reserva.hora_inicio.strftime("%H:%M:%S") if reserva.hora_inicio else None,
+                "hora_final": reserva.hora_final.strftime("%H:%M:%S") if reserva.hora_final else None,
+                "estado": reserva.estado,
+                "descripcion": reserva.descripcion,
+                "precio_total": float(reserva.precio_total) if reserva.precio_total else 0,
+                "created_at": reserva.created_at.isoformat() if reserva.created_at else None,
+                "updated_at": reserva.updated_at.isoformat() if reserva.updated_at else None,
+            })
+
+        return {
+            "message": "Servicios obtenidos exitosamente",
+            "servicios": servicios_list,
+            "estadisticas": {
+                "total": total,
+                "por_estado": {
+                    "pendientes": pendientes,
+                    "en_progreso": en_progreso,
+                    "completados": completados,
+                    "cancelados": cancelados,
+                },
+            },
+        }
+
     def get_reservas_by_ubicacion(self, ubicacion_id: int, skip: int = 0, limit: int = 100) -> List[ReservaResponse]:
         """Obtiene reservas por ubicación"""
         reservas = self.reserva_repository.get_by_ubicacion(ubicacion_id, skip=skip, limit=limit)
