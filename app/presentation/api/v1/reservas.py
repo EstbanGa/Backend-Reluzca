@@ -9,6 +9,7 @@ from app.infrastructure.repositories.usuario_repository import UsuarioRepository
 from app.infrastructure.repositories.plan_repository import PlanRepository
 from app.infrastructure.repositories.ubicacion_repository import UbicacionRepository
 from app.infrastructure.repositories.notificacion_repository import NotificacionRepository
+from app.infrastructure.repositories.actividad_repository import ActividadRepository
 from app.application.services.reserva_service import ReservaService
 from app.domain.schemas.reserva import ReservaCreate, ReservaUpdate, ReservaResponse, ReservasWithStatsResponse
 from app.domain.models.usuario import Usuario
@@ -378,18 +379,20 @@ class FechaHorario(BaseModel):
 
 
 class CalculoPrecioRequest(BaseModel):
-    plan_id: str
+    plan_id: Optional[str] = None
     ubicacion_id: str
     fechas_horarios: List[FechaHorario]
-    tareas_extra: List[str]
+    tareas_extra: List[str] = []
+    actividades_seleccionadas: List[str] = []
 
 
 class CrearReservasRequest(BaseModel):
     empleada_id: str
-    plan_id: str
+    plan_id: Optional[str] = None
     ubicacion_id: str
     fechas_horarios: List[FechaHorario]
-    tareas_extra: List[str]
+    tareas_extra: List[str] = []
+    actividades_seleccionadas: List[str] = []
 
 
 # (duplicate /empleadas/{empleada_id}/disponibilidad removed – first registration is canonical)
@@ -614,33 +617,46 @@ async def calcular_precio(
     Calcula el precio total de una reserva antes de crearla
     """
     try:
-        plan_repo = PlanRepository(db)
-        plan = plan_repo.get_by_id(request.plan_id)
-        
-        if not plan:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Plan no encontrado"
-            )
-        
-        # Precio base del plan por día
-        precio_plan = float(plan.precio) if plan.precio else 0
         cantidad_dias = len(request.fechas_horarios)
-        
-        # Calcular precio base (sin descuentos)
-        precio_base = precio_plan * cantidad_dias
-        
-        # Calcular tareas extra
+        if cantidad_dias == 0:
+            raise HTTPException(status_code=400, detail="Debe seleccionar al menos una fecha")
+
+        # --- Precio del plan (si aplica) ---
+        precio_plan = 0.0
+        if request.plan_id:
+            plan_repo = PlanRepository(db)
+            plan = plan_repo.get_by_id(request.plan_id)
+            if not plan:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan no encontrado")
+            precio_plan = float(plan.precio) if plan.precio else 0
+
+        precio_base_plan = precio_plan * cantidad_dias
+
+        # --- Precio de actividades individuales (si aplica) ---
+        precio_actividades_unitario = 0.0
+        if request.actividades_seleccionadas:
+            act_repo = ActividadRepository(db)
+            for act_id in request.actividades_seleccionadas:
+                actividad = act_repo.get_by_id(act_id)
+                if actividad and actividad.precio_unitario:
+                    precio_actividades_unitario += float(actividad.precio_unitario)
+
+        precio_actividades_total = precio_actividades_unitario * cantidad_dias
+
+        # Precio base combinado
+        precio_base = precio_base_plan + precio_actividades_total
+
+        # --- Tareas extra (solo cuando hay plan) ---
         precio_tarea_extra = 15000
-        total_tareas_extra = len(request.tareas_extra) * precio_tarea_extra * cantidad_dias
-        
-        # Calcular sobrecargos de sábado
+        total_tareas_extra = len(request.tareas_extra) * precio_tarea_extra * cantidad_dias if request.plan_id else 0
+
+        # --- Sobrecargos de sábado ---
         total_sobrecargos = sum(fh.sobrecargo_sabado for fh in request.fechas_horarios)
-        
+
         # Subtotal (antes del descuento)
         subtotal = precio_base + total_tareas_extra + total_sobrecargos
-        
-        # Calcular descuento por cantidad de días
+
+        # Descuento por cantidad de días
         porcentaje_descuento = 0
         if cantidad_dias <= 3:
             porcentaje_descuento = 0
@@ -652,17 +668,18 @@ async def calcular_precio(
             porcentaje_descuento = 7
         else:
             porcentaje_descuento = 10
-        
-        # Aplicar descuento
+
         descuento_dias = subtotal * (porcentaje_descuento / 100)
         precio_final = subtotal - descuento_dias
-        
-        # Precio por día
         precio_por_dia = precio_final / cantidad_dias if cantidad_dias > 0 else 0
-        
+
         return {
             'success': True,
             'calculo': {
+                'precio_plan_unitario': precio_plan,
+                'precio_base_plan': precio_base_plan,
+                'precio_actividades_unitario': precio_actividades_unitario,
+                'precio_actividades': precio_actividades_total,
                 'precio_base': precio_base,
                 'cantidad_dias': cantidad_dias,
                 'cantidad_tareas_extra': len(request.tareas_extra),
@@ -677,15 +694,7 @@ async def calcular_precio(
                 'precio_por_dia': precio_por_dia
             }
         }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al calcular precio: {str(e)}"
-        )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -716,12 +725,16 @@ async def crear_reservas(
                 detail="Empleada no encontrada"
             )
         
-        plan = plan_repo.get_by_id(request.plan_id)
-        if not plan:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Plan no encontrado"
-            )
+        plan = None
+        precio_plan = 0.0
+        if request.plan_id:
+            plan = plan_repo.get_by_id(request.plan_id)
+            if not plan:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Plan no encontrado"
+                )
+            precio_plan = float(plan.precio) if plan.precio else 0
         
         ubicacion = ubicacion_repo.get_by_id(request.ubicacion_id)
         if not ubicacion:
@@ -729,10 +742,19 @@ async def crear_reservas(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Ubicación no encontrada"
             )
+
+        # Precio de actividades individuales
+        precio_actividades_unitario = 0.0
+        if request.actividades_seleccionadas:
+            act_repo = ActividadRepository(db)
+            for act_id in request.actividades_seleccionadas:
+                actividad = act_repo.get_by_id(act_id)
+                if actividad and actividad.precio_unitario:
+                    precio_actividades_unitario += float(actividad.precio_unitario)
         
         # Calcular precio total
-        precio_plan = float(plan.precio)
         cantidad_dias = len(request.fechas_horarios)
+        precio_unitario_dia = precio_plan + precio_actividades_unitario
         
         porcentaje_descuento = 0
         if cantidad_dias <= 3:
@@ -746,13 +768,13 @@ async def crear_reservas(
         else:
             porcentaje_descuento = 10
         
-        subtotal_plan = precio_plan * cantidad_dias
-        descuento_dias = subtotal_plan * (porcentaje_descuento / 100)
-        total_plan = subtotal_plan - descuento_dias
+        subtotal_base = precio_unitario_dia * cantidad_dias
+        descuento_dias = subtotal_base * (porcentaje_descuento / 100)
+        total_base = subtotal_base - descuento_dias
         
         total_sobrecargos = sum(fh.sobrecargo_sabado for fh in request.fechas_horarios)
-        total_tareas_extra = len(request.tareas_extra) * 15000 * cantidad_dias
-        precio_total = total_plan + total_sobrecargos + total_tareas_extra
+        total_tareas_extra = len(request.tareas_extra) * 15000 * cantidad_dias if request.plan_id else 0
+        precio_total = total_base + total_sobrecargos + total_tareas_extra
         
         # Crear las reservas usando el modelo correcto
         reserva_repo = ReservaRepository(db)
@@ -761,7 +783,7 @@ async def crear_reservas(
         # Convertir IDs string a UUID
         from uuid import UUID
         empleada_uuid = UUID(request.empleada_id)
-        plan_uuid = UUID(request.plan_id)
+        plan_uuid = UUID(request.plan_id) if request.plan_id else None
         ubicacion_uuid = UUID(request.ubicacion_id)
         usuario_uuid = ubicacion.id_usuario  # Cliente de la ubicación
         
@@ -812,8 +834,8 @@ async def crear_reservas(
             fecha_obj = datetime.strptime(fecha_horario.fecha, '%Y-%m-%d').date()
             
             # Calcular precio individual para esta fecha
-            precio_individual = precio_plan + fecha_horario.sobrecargo_sabado
-            if request.tareas_extra:
+            precio_individual = precio_unitario_dia + fecha_horario.sobrecargo_sabado
+            if request.plan_id and request.tareas_extra:
                 precio_individual += len(request.tareas_extra) * 15000
             
             # Aplicar descuento proporcional
