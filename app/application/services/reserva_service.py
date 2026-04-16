@@ -288,7 +288,8 @@ class ReservaService:
 
         total = len(reservas)
         pendientes = len([r for r in reservas if r.estado == "pendiente"])
-        en_progreso = len([r for r in reservas if r.estado in ["confirmada", "en_proceso", "programada"]])
+        confirmadas = len([r for r in reservas if r.estado in ["confirmada", "programada"]])
+        en_progreso = len([r for r in reservas if r.estado == "en_proceso"])
         completados = len([r for r in reservas if r.estado == "completada"])
         cancelados = len([r for r in reservas if r.estado == "cancelada"])
 
@@ -352,6 +353,7 @@ class ReservaService:
                 "total": total,
                 "por_estado": {
                     "pendientes": pendientes,
+                    "confirmadas": confirmadas,
                     "en_progreso": en_progreso,
                     "completados": completados,
                     "cancelados": cancelados,
