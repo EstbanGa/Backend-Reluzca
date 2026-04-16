@@ -4,7 +4,9 @@ from typing import List
 from pydantic import BaseModel, constr
 from app.presentation.dependencies import get_db, get_current_user, require_role
 from app.infrastructure.repositories.usuario_repository import UsuarioRepository
+from app.infrastructure.repositories.notificacion_repository import NotificacionRepository
 from app.application.services.usuario_service import UsuarioService
+from uuid import UUID
 from app.domain.schemas.usuario import UsuarioCreate, UsuarioUpdate, UsuarioResponse, UsuariosRolResponse
 from app.domain.models.usuario import Usuario
 from app.core.config import settings
@@ -72,7 +74,7 @@ async def get_empleadas(
 
 @router.get("/{usuario_id}", response_model=UsuarioResponse)
 def get_usuario(
-    usuario_id: int,
+    usuario_id: str,
     current_user: Usuario = Depends(get_current_user),
     usuario_service: UsuarioService = Depends(get_usuario_service)
 ):
@@ -99,9 +101,10 @@ def create_usuario(
 
 @router.put("/{usuario_id}", response_model=UsuarioResponse)
 def update_usuario(
-    usuario_id: int,
+    usuario_id: str,
     usuario_data: UsuarioUpdate,
     current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
     usuario_service: UsuarioService = Depends(get_usuario_service)
 ):
     """Actualiza un usuario (usuario puede actualizarse a sí mismo o admin puede actualizar cualquiera)"""
@@ -121,12 +124,26 @@ def update_usuario(
             detail="No tienes permiso para cambiar el rol"
         )
     
-    return usuario_service.update_usuario(usuario_id, usuario_data)
+    result = usuario_service.update_usuario(usuario_id, usuario_data)
+
+    # Notificar al usuario si un admin editó su cuenta
+    if current_user.rol == "admin" and str(current_user.id) != usuario_id:
+        try:
+            NotificacionRepository(db).create(
+                id_usuario_destino=UUID(usuario_id),
+                tipo="sistema",
+                mensaje="Un administrador ha actualizado la información de tu cuenta.",
+                canal="in_app",
+            )
+        except Exception:
+            pass  # No fallar si la notificación falla
+
+    return result
 
 
 @router.delete("/{usuario_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_usuario(
-    usuario_id: int,
+    usuario_id: str,
     current_user: Usuario = Depends(require_role(["admin"])),
     usuario_service: UsuarioService = Depends(get_usuario_service)
 ):
@@ -136,7 +153,7 @@ def delete_usuario(
 
 @router.patch("/{usuario_id}/deactivate", response_model=UsuarioResponse)
 def deactivate_usuario(
-    usuario_id: int,
+    usuario_id: str,
     current_user: Usuario = Depends(require_role(["admin"])),
     usuario_service: UsuarioService = Depends(get_usuario_service)
 ):

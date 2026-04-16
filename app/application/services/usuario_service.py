@@ -34,7 +34,7 @@ class UsuarioService:
             pendientes=pendientes
         )
 
-    def get_usuario(self, usuario_id: int) -> UsuarioResponse:
+    def get_usuario(self, usuario_id: str) -> UsuarioResponse:
         """Obtiene un usuario por ID"""
         usuario = self.usuario_repository.get_by_id(usuario_id)
         if not usuario:
@@ -120,7 +120,7 @@ class UsuarioService:
         logger.info(f"Usuario creado: {usuario.correo}")
         return UsuarioResponse.model_validate(usuario)
 
-    def update_usuario(self, usuario_id: int, usuario_data: UsuarioUpdate) -> UsuarioResponse:
+    def update_usuario(self, usuario_id: str, usuario_data: UsuarioUpdate) -> UsuarioResponse:
         """Actualiza un usuario existente"""
         # Verificar que el usuario existe
         existing_user = self.usuario_repository.get_by_id(usuario_id)
@@ -153,7 +153,7 @@ class UsuarioService:
         usuario = self.usuario_repository.update(usuario_id, usuario_data)
         return UsuarioResponse.model_validate(usuario)
 
-    def delete_usuario(self, usuario_id: int) -> dict:
+    def delete_usuario(self, usuario_id: str) -> dict:
         """Elimina un usuario"""
         success = self.usuario_repository.delete(usuario_id)
         if not success:
@@ -163,7 +163,7 @@ class UsuarioService:
             )
         return {"message": "Usuario eliminado exitosamente"}
 
-    def deactivate_usuario(self, usuario_id: int) -> UsuarioResponse:
+    def deactivate_usuario(self, usuario_id: str) -> UsuarioResponse:
         """Desactiva un usuario"""
         usuario = self.usuario_repository.deactivate(usuario_id)
         if not usuario:
@@ -173,7 +173,7 @@ class UsuarioService:
             )
         return UsuarioResponse.model_validate(usuario)
 
-    def get_usuario_complete_info(self, usuario_id: int) -> UsuarioCompleteResponse:
+    def get_usuario_complete_info(self, usuario_id: str) -> UsuarioCompleteResponse:
         """
         Obtiene TODA la información del usuario incluyendo:
         - Datos del perfil

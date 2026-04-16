@@ -9,7 +9,7 @@ class UsuarioRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_by_id(self, usuario_id: int) -> Optional[Usuario]:
+    def get_by_id(self, usuario_id: str) -> Optional[Usuario]:
         return self.db.query(Usuario).filter(Usuario.id == usuario_id).first()
 
     def get_by_email(self, email: str) -> Optional[Usuario]:
@@ -59,7 +59,7 @@ class UsuarioRepository:
         self.db.refresh(db_usuario)
         return db_usuario
 
-    def update(self, usuario_id: int, usuario_data: UsuarioUpdate) -> Optional[Usuario]:
+    def update(self, usuario_id: str, usuario_data: UsuarioUpdate) -> Optional[Usuario]:
         """Actualiza un usuario"""
         db_usuario = self.get_by_id(usuario_id)
         if not db_usuario:
@@ -79,7 +79,7 @@ class UsuarioRepository:
         self.db.refresh(db_usuario)
         return db_usuario
 
-    def delete(self, usuario_id: int) -> bool:
+    def delete(self, usuario_id: str) -> bool:
         db_usuario = self.get_by_id(usuario_id)
         if not db_usuario:
             return False
@@ -88,7 +88,7 @@ class UsuarioRepository:
         self.db.commit()
         return True
 
-    def deactivate(self, usuario_id: int) -> Optional[Usuario]:
+    def deactivate(self, usuario_id: str) -> Optional[Usuario]:
         db_usuario = self.get_by_id(usuario_id)
         if not db_usuario:
             return None

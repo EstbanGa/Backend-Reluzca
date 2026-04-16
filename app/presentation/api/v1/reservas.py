@@ -8,6 +8,7 @@ from app.infrastructure.repositories.reserva_repository import ReservaRepository
 from app.infrastructure.repositories.usuario_repository import UsuarioRepository
 from app.infrastructure.repositories.plan_repository import PlanRepository
 from app.infrastructure.repositories.ubicacion_repository import UbicacionRepository
+from app.infrastructure.repositories.notificacion_repository import NotificacionRepository
 from app.application.services.reserva_service import ReservaService
 from app.domain.schemas.reserva import ReservaCreate, ReservaUpdate, ReservaResponse, ReservasWithStatsResponse
 from app.domain.models.usuario import Usuario
@@ -824,7 +825,23 @@ async def crear_reservas(
             reservas_creadas.append(reserva)
         
         db.commit()
-        
+
+        # Notificar a la empleada sobre las nuevas reservas asignadas
+        try:
+            notif_repo = NotificacionRepository(db)
+            n = len(reservas_creadas)
+            fechas_str = ", ".join(fh.fecha for fh in request.fechas_horarios[:3])
+            if n > 3:
+                fechas_str += f" y {n - 3} más"
+            notif_repo.create(
+                id_usuario_destino=empleada_uuid,
+                tipo="reserva",
+                mensaje=f"Se te asignaron {n} nueva(s) reserva(s) para las fechas: {fechas_str}.",
+                canal="in_app",
+            )
+        except Exception:
+            pass  # No fallar si la notificación falla
+
         return {
             'success': True,
             'message': f'Se crearon {len(reservas_creadas)} reservas exitosamente',
@@ -1279,5 +1296,42 @@ def update_estado_reserva(
         raise HTTPException(status_code=404, detail="Reserva no encontrada")
     reserva.estado = data.estado
     db.commit()
+
+    # Notificar al cliente y a la empleada sobre el cambio de estado
+    try:
+        notif_repo = NotificacionRepository(db)
+        msgs_cliente = {
+            "confirmada": "Tu reserva ha sido confirmada. ¡Te esperamos!",
+            "en_proceso": "El servicio de tu reserva ha comenzado.",
+            "completada": "Tu reserva ha sido completada. ¡Gracias por confiar en Reluzca!",
+            "cancelada": "Tu reserva ha sido cancelada. Contáctanos si tienes dudas.",
+            "pendiente": "Tu reserva ha vuelto a estado pendiente.",
+        }
+        msgs_empleada = {
+            "confirmada": "Una reserva asignada a ti ha sido confirmada.",
+            "en_proceso": "Una reserva asignada a ti está ahora en proceso.",
+            "completada": "Una reserva asignada a ti ha sido marcada como completada.",
+            "cancelada": "Una reserva asignada a ti ha sido cancelada.",
+        }
+        rid = UUID(str(reserva.id))
+        msg_c = msgs_cliente.get(data.estado, f"El estado de tu reserva cambió a: {data.estado}.")
+        notif_repo.create(
+            id_usuario_destino=UUID(str(reserva.id_usuario)),
+            tipo="reserva",
+            mensaje=msg_c,
+            canal="in_app",
+            id_reserva=rid,
+        )
+        if reserva.id_empleada and data.estado in msgs_empleada:
+            notif_repo.create(
+                id_usuario_destino=UUID(str(reserva.id_empleada)),
+                tipo="reserva",
+                mensaje=msgs_empleada[data.estado],
+                canal="in_app",
+                id_reserva=rid,
+            )
+    except Exception:
+        pass  # No fallar si la notificación falla
+
     return {"success": True, "id": str(reserva.id), "estado": reserva.estado}
 
