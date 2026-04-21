@@ -17,28 +17,28 @@ class NotificacionService:
         - notificaciones: Lista de notificaciones con todos los detalles
         - estadisticas: Estadísticas de notificaciones
         """
-        # Obtener todas las notificaciones del cliente
-        notificaciones = self.notificacion_repository.get_by_cliente(cliente_id)
-        
+        # Obtener todas las notificaciones del usuario
+        notificaciones = self.notificacion_repository.get_by_usuario(cliente_id)
+
         # Calcular estadísticas
         total = len(notificaciones)
         leidas = len([n for n in notificaciones if n.leida])
         no_leidas = len([n for n in notificaciones if not n.leida])
-        
+
         # Contar por tipo
         por_tipo = {}
         for notificacion in notificaciones:
-            tipo = notificacion.tipo_notificacion
+            tipo = notificacion.tipo
             por_tipo[tipo] = por_tipo.get(tipo, 0) + 1
-        
+
         # Convertir notificaciones a dict con detalles de reserva
         notificaciones_list = []
         for notificacion in notificaciones:
             notificacion_dict = {
                 "id": str(notificacion.id),
-                "id_reserva": str(notificacion.id_reserva),
-                "id_cliente": str(notificacion.id_cliente),
-                "tipo_notificacion": notificacion.tipo_notificacion,
+                "id_reserva": str(notificacion.id_reserva) if notificacion.id_reserva else None,
+                "id_usuario_destino": str(notificacion.id_usuario_destino),
+                "tipo_notificacion": notificacion.tipo,
                 "mensaje": notificacion.mensaje,
                 "leida": notificacion.leida,
                 "created_at": notificacion.created_at.isoformat() if notificacion.created_at else None,

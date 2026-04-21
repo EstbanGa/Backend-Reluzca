@@ -80,7 +80,7 @@ def get_usuario(
 ):
     """Obtiene un usuario por ID (usuario debe estar autenticado)"""
     # Los usuarios pueden ver su propia información o los admins pueden ver cualquiera
-    if current_user.id != usuario_id and current_user.rol != "admin":
+    if str(current_user.id) != usuario_id and current_user.rol != "admin":
         from fastapi import HTTPException
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -109,7 +109,7 @@ def update_usuario(
 ):
     """Actualiza un usuario (usuario puede actualizarse a sí mismo o admin puede actualizar cualquiera)"""
     # Los usuarios pueden actualizar su propia información o los admins pueden actualizar cualquiera
-    if current_user.id != usuario_id and current_user.rol != "admin":
+    if str(current_user.id) != usuario_id and current_user.rol != "admin":
         from fastapi import HTTPException
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
