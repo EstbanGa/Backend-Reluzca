@@ -1,6 +1,5 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from supabase import create_client
 from app.core.config import settings
 from app.presentation.dependencies import get_db
 from app.infrastructure.repositories.usuario_repository import UsuarioRepository
@@ -17,6 +16,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 def _supabase_admin():
     """Crea cliente Supabase con service_role para operaciones admin."""
+    from supabase import create_client
     if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -37,6 +37,7 @@ def login(request: LoginRequest):
             detail="Supabase no está configurado",
         )
     try:
+        from supabase import create_client
         supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY)
         response = supabase.auth.sign_in_with_password(
             {"email": request.email, "password": request.password}
@@ -209,6 +210,7 @@ def change_password(
 
     # Verificar contraseña actual haciendo login
     try:
+        from supabase import create_client
         supabase_anon = create_client(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY)
         supabase_anon.auth.sign_in_with_password(
             {"email": user.correo, "password": request.current_password}

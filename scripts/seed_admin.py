@@ -47,12 +47,12 @@ TABLAS_TRUNCAR = [
 ]
 
 ADMIN = {
-    "nombre": "Esteban",
-    "apellido": "Garzón",
-    "correo": "estban1503@gmail.com",
-    "password": "AdminReluzca0*",
-    "telefono": "3167271119",
-    "documento": "1001301217",
+    "nombre": "Admin",
+    "apellido": "Reluzca",
+    "correo": "administrador1reluzca@gmail.com",
+    "password": "+Admin1reluzca01012001+",
+    "telefono": "3148879926",
+    "documento": "79691708",
     "tipo_persona": "natural",
     "fecha_nacimiento": date(2003, 5, 15),
     "rol": "admin",

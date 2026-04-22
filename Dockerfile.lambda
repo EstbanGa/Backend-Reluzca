@@ -8,7 +8,6 @@ RUN pip install --default-timeout=300 --no-cache-dir -r requirements.txt
 
 # Copiar código de la aplicación
 COPY app ${LAMBDA_TASK_ROOT}/app
-COPY integrations ${LAMBDA_TASK_ROOT}/integrations
 COPY main.py ${LAMBDA_TASK_ROOT}/
 COPY lambda_handler.py ${LAMBDA_TASK_ROOT}/
 

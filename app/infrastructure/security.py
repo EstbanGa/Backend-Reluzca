@@ -14,7 +14,6 @@ import jwt as pyjwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from supabase import create_client
 import logging
 
 from app.core.config import settings
@@ -49,6 +48,7 @@ def _verify_local(token: str) -> SupabaseTokenData:
 
 def _verify_remote(token: str) -> SupabaseTokenData:
     """Verificación remota vía Supabase Admin SDK (get_user)."""
+    from supabase import create_client
     sup = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
     response = sup.auth.get_user(token)
     if not response.user:

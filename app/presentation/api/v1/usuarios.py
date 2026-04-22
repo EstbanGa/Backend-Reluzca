@@ -10,7 +10,6 @@ from uuid import UUID
 from app.domain.schemas.usuario import UsuarioCreate, UsuarioUpdate, UsuarioResponse, UsuariosRolResponse
 from app.domain.models.usuario import Usuario
 from app.core.config import settings
-from supabase import create_client
 
 
 class AdminPasswordChange(BaseModel):
@@ -179,6 +178,7 @@ def admin_change_password(
             detail="La contraseña debe tener al menos 6 caracteres",
         )
     try:
+        from supabase import create_client
         supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
         supabase.auth.admin.update_user_by_id(
             usuario_id,

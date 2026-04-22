@@ -3,5 +3,11 @@
 from mangum import Mangum
 from main import app
 
-# Mangum convierte la aplicación FastAPI para que funcione con Lambda
-handler = Mangum(app, lifespan="off")
+_mangum = Mangum(app, lifespan="off")
+
+
+def handler(event, context):
+    # Warm-up event desde EventBridge — retorna rápido sin procesar HTTP
+    if event.get("source") == "aws.events":
+        return {"statusCode": 200, "body": "warm"}
+    return _mangum(event, context)
