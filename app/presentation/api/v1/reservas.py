@@ -602,7 +602,7 @@ async def get_tareas_extra(
             if tarea not in servicios_incluidos:
                 tareas_extra.append({
                     'nombre': tarea,
-                    'precio': $15  # Precio fijo por tarea extra
+                    'precio': 15  # Precio fijo por tarea extra
                 })
         
         return {
@@ -663,7 +663,7 @@ async def calcular_precio(
         precio_base = precio_base_plan + precio_actividades_total
 
         # --- Tareas extra (solo cuando hay plan) ---
-        precio_tarea_extra = $15
+        precio_tarea_extra = 15
         total_tareas_extra = len(request.tareas_extra) * precio_tarea_extra * cantidad_dias if request.plan_id else 0
 
         # --- Sobrecargos de sábado ---
@@ -789,7 +789,7 @@ async def crear_reservas(
         total_base = subtotal_base - descuento_dias
         
         total_sobrecargos = sum(fh.sobrecargo_sabado for fh in request.fechas_horarios)
-        total_tareas_extra = len(request.tareas_extra) * $15 * cantidad_dias if request.plan_id else 0
+        total_tareas_extra = len(request.tareas_extra) * 15 * cantidad_dias if request.plan_id else 0
         precio_total = total_base + total_sobrecargos + total_tareas_extra
         
         # Crear las reservas usando el modelo correcto
@@ -852,7 +852,7 @@ async def crear_reservas(
             # Calcular precio individual para esta fecha
             precio_individual = precio_unitario_dia + fecha_horario.sobrecargo_sabado
             if request.plan_id and request.tareas_extra:
-                precio_individual += len(request.tareas_extra) * $15
+                precio_individual += len(request.tareas_extra) * 15
             
             # Aplicar descuento proporcional
             precio_individual -= (precio_individual * porcentaje_descuento / 100)
@@ -1224,18 +1224,18 @@ def get_reserva_activa_empleada(
 
     hoy = date_type.today()
 
-    # 1. Reserva en_proceso (primera prioridad)
+    # 1. Reserva en_curso / en_proceso (primera prioridad)
     reserva = (
         db.query(ReservaModel)
         .filter(
             ReservaModel.id_empleada == emp_uuid,
-            ReservaModel.estado == "en_proceso",
+            ReservaModel.estado.in_(["en_curso", "en_proceso"]),
         )
         .order_by(ReservaModel.fecha.desc(), ReservaModel.hora_inicio.asc())
         .first()
     )
 
-    # 2. Reserva de hoy programada / confirmada (segunda prioridad)
+    # 2. Reserva de hoy programada / confirmada / pendiente (segunda prioridad)
     if not reserva:
         reserva = (
             db.query(ReservaModel)

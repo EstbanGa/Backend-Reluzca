@@ -1,7 +1,7 @@
 .PHONY: build push deploy login create-repo all
 
 AWS_REGION = us-east-1
-AWS_ACCOUNT_ID = 058264504467
+AWS_ACCOUNT_ID = 139826822721
 ECR_REPO = reluzca-api
 LAMBDA_FUNCTION = reluzca-api
 IMAGE_TAG = latest

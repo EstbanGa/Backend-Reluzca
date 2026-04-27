@@ -30,7 +30,7 @@ class Reserva(Base):
     fecha = Column(Date, nullable=False)
     hora_inicio = Column(Time, nullable=False)
     hora_final = Column(Time, nullable=False)
-    estado = Column(String(20), nullable=True, default="pendiente")  # pendiente, confirmada, en_proceso, completada, cancelada
+    estado = Column(String(20), nullable=True, default="pendiente")  # pendiente, programada, en_curso, completada, cancelada
     estado_pago = Column(String(20), nullable=True, default="SIN_PAGAR")  # SIN_PAGAR, PAGADO, PARCIAL, REEMBOLSADO
     metodo_pago = Column(String(30), nullable=True)  # efectivo, transferencia, tarjeta
     fecha_pago = Column(DateTime, nullable=True)

@@ -14,7 +14,7 @@ class ReservaBase(BaseModel):
     fecha: date
     hora_inicio: time
     hora_final: time
-    estado: str = Field(default="pendiente", max_length=20)  # pendiente, confirmada, en_proceso, completada, cancelada
+    estado: str = Field(default="pendiente", max_length=20)  # pendiente, programada, en_curso, completada, cancelada
     estado_pago: str = Field(default="SIN_PAGAR", max_length=20)  # SIN_PAGAR, PAGADO, PARCIAL, REEMBOLSADO
     metodo_pago: Optional[str] = Field(None, max_length=30)  # efectivo, transferencia, tarjeta
     fecha_pago: Optional[datetime] = None

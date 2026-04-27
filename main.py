@@ -27,13 +27,13 @@ app = FastAPI(
     redirect_slashes=False  # Deshabilitar redirects para evitar loops en Lambda
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Permitir todos los orígenes en desarrollo
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],  # Permitir todos los orígenes en desarrollo
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 # Registrar los routers
 app.include_router(auth_router, prefix="/api")
